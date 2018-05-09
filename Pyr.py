@@ -33,11 +33,10 @@ class Pyr():
         slope = np.tan(slope*np.pi/180.)
         self.NDim = NDim
         self.basis_type = basis
-        self.pupil_geom = 'square'
+        self.pupil_geom = pupil_geom
         self.PointWiseOrthogonalBasis = False  # property of basis functions
         self.npup = npup
         self.npad = npad
-        self.pupil_geom = pupil_geom
         self.rotate = rotate
         self.x = np.linspace(-1, 1, npup)
         self.RegScale = None # needed for regularization (scale param)
