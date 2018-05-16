@@ -56,13 +56,17 @@ class Pyr1D():
 # lam - wavelength
 #   NOTE: z, diam, lam must all be in the same units
 # npad - must be greater than len(f)
-def FresnelProp1D(f, z, diam, lam = 0.8, npad=2048):
+def FresnelProp1D(f, z, diam, lam = 0.8, npad=2048, return_grid=False):
     dx = diam/(1. + len(f)) # assumes points on f are bin centers
     u = np.linspace(-npad/2, npad/2 - 1, npad)*dx  #coordinate grid in source plane AND in output plane
-    # k = u*2*np.pi/(lam*z)  # spatial frequency grid for FFT output
-    ff = myzp(f, npad)*np.exp(1j*np.pi*u*u/(lam*z))
+    k = u*2*np.pi/(lam*z)  # spatial frequency grid for FFT output
+    ff = myzp(f, npad)
     ff = -1j*myfft(ff,-1)*np.exp(1j*u*u/(lam*z))*np.exp(1j*2*np.pi*z/lam)/(z*lam)
-    return(ff)
+    ff = myfft(ff, 1)
+    if return_grid:
+        return(ff,u)
+    else:
+        return(ff)
 
 #the FORWARD FFT corresponds to direction = -1, the inverse is +1
 def myfft(g, direction=-1):  # for centered arrays, custom normalization
