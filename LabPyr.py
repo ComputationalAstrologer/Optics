@@ -49,43 +49,31 @@ class Pyr1D():
     def Prop2FirstFocus(self, pfield, den, dfo):
         return(np.nan)
 
-# 1D planar Fresnel beam prop.
+# 1D angular spectrum beam prop.
 # f - complex valued field in initial plane
 # z - propagation distance
 # diam - diameter of beam
 # lam - wavelength
 #   NOTE: z, diam, lam must all be in the same units
 # npad - must be greater than len(f)
-def FresnelProp1D(f, z, diam, lam = 0.8, npad=2048, return_grid=False):
+#   NOTE: In order to resove the angular spectrum, you want lam/(2*dx) >= 1
+def AngSpecProp1D(f, z, diam, lam = 0.8, npad=2048, return_grid=False):
     dx = diam/(1. + len(f)) # assumes points on f are bin centers
     u = np.linspace(-npad/2, npad/2 - 1, npad)*dx  #coordinate grid in source plane AND in output plane
-    k = u*2*np.pi/(lam*z)  # spatial frequency grid for FFT output
-    ff = myzp(f, npad)
-    ff = -1j*myfft(ff,-1)*np.exp(1j*u*u/(lam*z))*np.exp(1j*2*np.pi*z/lam)/(z*lam)
-    ff = myfft(ff, 1)
+    k = np.linspace(-npad/2, npad/2 - 1, npad)/(dx*npad)  # spatial frequency grid
+    alpha = np.fft.fftshift(k*lam)  # direction cosines
+    nonprop = np.where(np.abs(alpha) >= 1)[0]
+    ff = np.fft.fft(np.fft.fftshift(myzp(f, npad)))
+    mask = np.ones(ff.shape)
+    mask[nonprop] = 0
+    a2 = mask*alpha*alpha
+    fz = ff*mask*np.exp(1j*2*np.pi*z*np.sqrt(1 - a2)/lam)
+    fz = np.fft.ifftshift(np.fft.ifft(fz))
     if return_grid:
-        return(ff,u)
+        return(fz,u)
     else:
-        return(ff)
+        return(fz)
 
-#the FORWARD FFT corresponds to direction = -1, the inverse is +1
-def myfft(g, direction=-1):  # for centered arrays, custom normalization
-    if direction == -1:
-        if g.ndim == 1:
-            return np.fft.fftshift(np.fft.fft(np.fft.fftshift(g)))/np.sqrt(len(g))
-        elif g.ndim ==2:
-            return(np.fft.fftshift(np.fft.fft2(np.fft.fftshift(g)))/np.sqrt(g.shape[0]*g.shape[1]))
-        else:
-            raise Exception("Input array must be 1D or 2D.")
-    elif direction == 1:
-        if g.ndim == 1:
-            return np.fft.ifftshift(np.fft.ifft(np.fft.ifftshift(g)))
-        elif g.ndim ==2:
-            return(np.fft.ifftshift(np.fft.ifft2(np.fft.ifftshift(g))))
-        else:
-            raise Exception("Input array must be 1D or 2D.")
-    else:
-        raise Exception("Invalid direction.")
 
 #  this zero pad function gives rise to purely real myfft with symm. input
 def myzp(f, npad):  # zero-pad function for pupil fields
