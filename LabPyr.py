@@ -74,6 +74,31 @@ def AngSpecProp1D(f, z, diam, lam = 0.8, npad=2048, return_grid=False):
     else:
         return(fz)
 
+def propTF(u1, L, lam, z):
+    M = u1.shape[0]
+    N = u1.shape[1]
+    assert M == N
+    dx = L/M
+    fx = np.linspace(-1/(2*dx), 1/(2*dx) - 1/L, M)
+    FX, FY = np.meshgrid(fx, fx)
+    H = np.exp(-1j*np.pi*lam*z*(FX*FX + FY*FY))
+    H = np.fft.fftshift(H)
+    U1 = np.fft.fft2(np.fft.fftshift(u1))
+    U2 = H*U1
+    U2 = np.fft.ifftshift(np.fft.ifft2(U2))
+    return(U2)
+
+#rectangle function.  Note to make a square that is length w on a side,
+#   use:  X1, Y1 = np.meshgrid(x,y); u = rect1D(X1/2/w)*rect1D(Y1/2/w)
+def rect1D(x):
+    assert x.ndim == 2
+    f = np.zeros(x.shape)
+    for m in range(x.shape[0]):
+        for n in range(x.shape[1]):
+            if abs(x[m,n]) <= 1:
+                f[m,n] = 1
+    return(f)
+
 
 #  this zero pad function gives rise to purely real myfft with symm. input
 def myzp(f, npad):  # zero-pad function for pupil fields
