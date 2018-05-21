@@ -49,7 +49,40 @@ class Pyr1D():
     def Prop2FirstFocus(self, pfield, den, dfo):
         return(np.nan)
 
-# 1D angular spectrum beam prop.
+# 1D angular spectrum beam prop., DTFT based
+#   This evenly samples the spatial frequency over the propagating modes
+# f - complex valued field in initial plane
+# z - propagation distance
+# diam - diameter of beam
+
+#   NOTE: z, diam, lam must all be in the same units
+#nm - the number of propagating modes (spatial frequencies)
+# lam - wavelength
+# return_spatial - do 2nd FT to put output onto
+#    spatial grid defined by diam_out, nx_out
+def SlowAngSpecProp1D(f, z, diam, diam_out, nx_out, nm= 72, lam = 1., return_spatial=True):
+    nx = f.shape[0]
+    dx = diam/nx
+    x = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)
+    dalpha = 2/nm #  direction cosine step (not frequency step)
+    alpha = np.linspace(-1 + dalpha/2, 1 - dalpha/2, nm)
+    ff = np.zeros(nm).astype('complex')  # angular spectrum of f
+    for km in range(nm):
+        for l in range(nx):
+            ff[km] += f[l]*np.exp(-2j*np.pi*x[l]*alpha[km]/lam)/nm
+        ff[km] *= np.exp(2j*np.pi*z*np.sqrt(1 - alpha[km]**2)/lam)
+    if not return_spatial:
+        return(ff)
+    #  do inverse FFT to get output field
+    fz = np.zeros(nx_out).astype('complex')
+    dx = diam_out/nx_out
+    x_out = np.linspace(-diam_out/2 + dx/2, diam_out/2 - dx/2, nx_out)
+    for l in range(nx):
+        for km in range(nm):
+            fz[l] += ff[km]*np.exp(2j*np.pi*x_out[l]*alpha[km]/lam)/nm
+    return(fz)
+
+# 1D angular spectrum beam prop., FFT based
 # f - complex valued field in initial plane
 # z - propagation distance
 # diam - diameter of beam
