@@ -49,63 +49,29 @@ class Pyr1D():
     def Prop2FirstFocus(self, pfield, den, dfo):
         return(np.nan)
 
-# 1D angular spectrum beam prop., DTFT based
+# 1D Fresnel beam prop., analog FT based
 #   This evenly samples the spatial frequency over the propagating modes
-# f - complex valued field in initial plane
+# g - complex valued field in initial plane
+# diam - diameter of beam  NOTE: z, diam, lam must all be in the same units
 # z - propagation distance
-# diam - diameter of beam
-
-#   NOTE: z, diam, lam must all be in the same units
-#nm - the number of propagating modes (spatial frequencies)
 # lam - wavelength
-# return_spatial - do 2nd FT to put output onto
-#    spatial grid defined by diam_out, nx_out
-def SlowAngSpecProp1D(f, z, diam, diam_out, nx_out, nm= 72, lam = 1., return_spatial=True):
-    nx = f.shape[0]
-    dx = diam/nx
-    x = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)
-    dalpha = 2/nm #  direction cosine step (not frequency step)
-    alpha = np.linspace(-1 + dalpha/2, 1 - dalpha/2, nm)
-    ff = np.zeros(nm).astype('complex')  # angular spectrum of f
-    for km in range(nm):
-        for l in range(nx):
-            ff[km] += f[l]*np.exp(-2j*np.pi*x[l]*alpha[km]/lam)/nm
-        ff[km] *= np.exp(2j*np.pi*z*np.sqrt(1 - alpha[km]**2)/lam)
-    if not return_spatial:
-        return(ff)
-    #  do inverse FFT to get output field
-    fz = np.zeros(nx_out).astype('complex')
-    dx = diam_out/nx_out
-    x_out = np.linspace(-diam_out/2 + dx/2, diam_out/2 - dx/2, nx_out)
-    for l in range(nx):
-        for km in range(nm):
-            fz[l] += ff[km]*np.exp(2j*np.pi*x_out[l]*alpha[km]/lam)/nm
-    return(fz)
-
-# 1D angular spectrum beam prop., FFT based
-# f - complex valued field in initial plane
-# z - propagation distance
-# diam - diameter of beam
-# lam - wavelength
-#   NOTE: z, diam, lam must all be in the same units
-# npad - must be greater than len(f)
-#   NOTE: In order to resove the angular spectrum, you want lam/(2*dx) >= 1
-def AngSpecProp1D(f, z, diam, lam = 0.8, npad=2048, return_grid=False):
-    dx = diam/(1. + len(f)) # assumes points on f are bin centers
-    u = np.linspace(-npad/2, npad/2 - 1, npad)*dx  #coordinate grid in source plane AND in output plane
-    k = np.linspace(-npad/2, npad/2 - 1, npad)/(dx*npad)  # spatial frequency grid
-    alpha = np.fft.fftshift(k*lam)  # direction cosines
-    nonprop = np.where(np.abs(alpha) >= 1)[0]
-    ff = np.fft.fft(np.fft.fftshift(myzp(f, npad)))
-    mask = np.ones(ff.shape)
-    mask[nonprop] = 0
-    a2 = mask*alpha*alpha
-    fz = ff*mask*np.exp(1j*2*np.pi*z*np.sqrt(1 - a2)/lam)
-    fz = np.fft.ifftshift(np.fft.ifft(fz))
-    if return_grid:
-        return(fz,u)
-    else:
-        return(fz)
+# dphi_max (degrees) - spatial sampling criterion for chirp function
+#    output spatial grid defined by  diam_out and dphi_max
+# returns propagated field and output spatial grid
+def SlowFresnelProp1D(g, z, diam_in, diam_out, lam = .8, dphi_max=10):
+    nx = g.shape[0]
+    dx = diam_in/nx
+    x = np.linspace(-diam_in/2 + dx/2, diam_in/2 - dx/2, nx) #  input grid
+    ds = (dphi_max/180)*lam*z/diam_out  # factors of pi in num and denom cancel
+    ns = int(diam_out/ds)
+    s = np.linspace(-diam_out/2 + ds/2, diam_out/2 - ds/2, ns)  # output grid
+    k = s/(lam*z)  # spatial frequency grid
+    Fg = np.zeros(ns).astype('complex')  # propagated version of g
+    for m in range(ns):
+        for n in range(nx):
+            Fg[m] += g[n]*np.exp(1j*x[n]**2/(2*lam*z))*np.exp(-2j*np.pi*k[m]*x[n])*dx
+        Fg[m] *= -1j*np.exp(2j*np.pi*z/lam + 1j*s[m]**2/(lam*z))/(lam*z)
+    return([Fg, s])
 
 def propTF(u1, L, lam, z):
     M = u1.shape[0]
