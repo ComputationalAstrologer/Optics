@@ -13,6 +13,8 @@ params is a dictionary of the basic parameters of the numerical model
 """
 
 import numpy as np
+from scipy.signal import convolve as conv
+from scipy.interpolate import interp1d
 
 pyrparams = dict()  # dict of nominal optical system paramers
 pyrparams['lambda'] = 0.8 # wavelength (microns)
@@ -72,6 +74,28 @@ def SlowFresnelProp1D(g, z, diam_in, diam_out, lam = .8, dphi_max=10):
             Fg[m] += g[n]*np.exp(1j*x[n]**2/(2*lam*z))*np.exp(-2j*np.pi*k[m]*x[n])*dx
         Fg[m] *= -1j*np.exp(2j*np.pi*z/lam + 1j*s[m]**2/(lam*z))/(lam*z)
     return([Fg, s])
+
+def ConvFresnel1D(g, d1, d2, z, lam=1., dPhiTol_deg= 30):
+    dx = d1/g.shape[0]
+    #first figure out sampling criterion for chirp
+    dx_tol = (dPhiTol_deg/180)*lam*z/(d1 + d1)  # factors of pi cancel
+    if dx > dx_tol:  # interpolate onto finer grid
+        xo = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, g.shape[0])  # old grid
+        dx = dx_tol
+        nx = int(d1/dx)
+        x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # new grid
+        dx = x[1] - x[0]
+        interp = interp1d(g, xo, 'quadratic')
+        g = interp(x)
+    else:
+        nx = g.shape[0]
+        x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # grid
+    ns = int((d1 + d2)/dx)
+    s = np.linspace(-d1/2 - d2/2 + dx/2, d1/2 + d2/2 - dx/2, ns)
+    kern = np.exp(1j*np.pi*s*s/(lam*z))
+    h = conv(kern, g, mode='same', method='auto')
+    return([h,s])
+
 
 def propTF(u1, L, lam, z):
     M = u1.shape[0]
