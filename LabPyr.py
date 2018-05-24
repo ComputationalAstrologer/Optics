@@ -76,6 +76,8 @@ def SlowFresnelProp1D(g, z, diam_in, diam_out, lam = .8, dphi_max=10):
     return([Fg, s])
 
 def ConvFresnel1D(g, d1, d2, z, lam=1., dPhiTol_deg= 30):
+    if z**3 < np.pi*(d1 + d2)**2/lam:  # Goodman 4-18
+        raise Exception("Fresnel approximation invalid")
     dx = d1/g.shape[0]
     #first figure out sampling criterion for chirp
     dx_tol = (dPhiTol_deg/180)*lam*z/(d1 + d1)  # factors of pi cancel
