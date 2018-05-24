@@ -17,7 +17,7 @@ from scipy.signal import convolve as conv
 from scipy.interpolate import interp1d
 
 pyrparams = dict()  # dict of nominal optical system paramers
-pyrparams['lambda'] = 0.8 # wavelength (microns)
+pyrparams['wavelength'] = 0.8 # wavelength (microns)
 pyrparams['indref'] = 1.45 # pyramid index of refraction
 pyrparams['pslope'] = 3. # slope of pyramid faces relative to horizontal (degrees)  
 pyrparams['beam_diam'] = 1.e4 # input beam diameter (microns)
@@ -26,15 +26,7 @@ pyrparams['f1'] = 1.e6 # focal length of lens #1 (focuses light on pyramid tip)
 pyrparams['d_p2l2'] = 1.e5 # distance from pyramid tip to lens 1 (corrected for pyramid glass)
 pyrparams['f2'] = 1.e5 # focal length of lens #2 (makes 4 pupil images)
 pyrparams['npup'] = 33  # number of pixels in entrace pupil
-pyrparams['npad1'] = 2048 # number of points in first FFT
-pyrparams['npad2'] = 2048 # number of points in second FFT
-
-# This simulator two dimentions perpendicular to the optical axis and is designed
-#   to model the PyWFS in the lab.
-class Pyr2D():
-    def __init__(self, params=pyrparams):
-        self.params = params
-        return
+pyrparams['max_chirp_step_deg'] = 90  #maximum allowed value (degrees) in chirp step for Fresnel prop
 
 # This simulator has only 1 dimension transverse to the optical axis.  The purpose is
 #   to test numerical resolution and code algorithms/structures.
@@ -42,88 +34,68 @@ class Pyr1D():
     def __init__(self, params=pyrparams):
         return
 
-    # This calculates the field near the focal plane of lens1, which is near the
-    #   apex of the pyramid, as a function of both the distance from the entrance
-    #   pupil to the lens (den) and the distance from the pupil to the experiment's
-    #   focal point (dfo).  This involves 2 Fresnel propagations and quadratic 
-    #   factor applied by the lens.
-    # Distances are in microns
-    def Prop2FirstFocus(self, pfield, den, dfo):
+    # This calculates the field near the focal plane of lens1, which is near the apex of the pyramid
+    # pfield - pupil plane field (assume evenly sampled)
+    def Prop2FirstFocus(self, pfield, return_dervis=True):
+        nx = pfield.shape[0]
+        diam0 = self.params['beam_diam']
+        dx = diam0/nx
+        x = np.linspace(-diam0/2 + dx/2, diam0/2 - dx/2, nx)
         return(np.nan)
 
-# 1D Fresnel beam prop., analog FT based
-#   This evenly samples the spatial frequency over the propagating modes
-# g - complex valued field in initial plane
-# diam - diameter of beam  NOTE: z, diam, lam must all be in the same units
-# z - propagation distance
-# lam - wavelength
-# dphi_max (degrees) - spatial sampling criterion for chirp function
-#    output spatial grid defined by  diam_out and dphi_max
-# returns propagated field and output spatial grid
-def SlowFresnelProp1D(g, z, diam_in, diam_out, lam = .8, dphi_max=10):
-    nx = g.shape[0]
-    dx = diam_in/nx
-    x = np.linspace(-diam_in/2 + dx/2, diam_in/2 - dx/2, nx) #  input grid
-    ds = (dphi_max/180)*lam*z/diam_out  # factors of pi in num and denom cancel
-    ns = int(diam_out/ds)
-    s = np.linspace(-diam_out/2 + ds/2, diam_out/2 - ds/2, ns)  # output grid
-    k = s/(lam*z)  # spatial frequency grid
-    Fg = np.zeros(ns).astype('complex')  # propagated version of g
-    for m in range(ns):
-        for n in range(nx):
-            Fg[m] += g[n]*np.exp(1j*x[n]**2/(2*lam*z))*np.exp(-2j*np.pi*k[m]*x[n])*dx
-        Fg[m] *= -1j*np.exp(2j*np.pi*z/lam + 1j*s[m]**2/(lam*z))/(lam*z)
-    return([Fg, s])
+    #This resamples the field to cut computation costs.  It judges how accurately the resampled field
+    #  reproduces the original after linear interpolation.
+    # new_diam - diameter of resampled field.
+    def ResampleField(self, g, new_diam):
+        return(np.nan)
 
-def ConvFresnel1D(g, d1, d2, z, lam=1., dPhiTol_deg= 30):
-    if z**3 < np.pi*(d1 + d2)**2/lam:  # Goodman 4-18
-        raise Exception("Fresnel approximation invalid")
-    dx = d1/g.shape[0]
-    #first figure out sampling criterion for chirp
-    dx_tol = (dPhiTol_deg/180)*lam*z/(d1 + d1)  # factors of pi cancel
-    if dx > dx_tol:  # interpolate onto finer grid
-        xo = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, g.shape[0])  # old grid
-        dx = dx_tol
-        nx = int(d1/dx)
-        x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # new grid
-        dx = x[1] - x[0]
-        interp = interp1d(g, xo, 'quadratic')
-        g = interp(x)
-    else:
-        nx = g.shape[0]
-        x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # grid
-    ns = int((d1 + d2)/dx)
-    s = np.linspace(-d1/2 - d2/2 + dx/2, d1/2 + d2/2 - dx/2, ns)
-    kern = np.exp(1j*np.pi*s*s/(lam*z))
-    h = conv(kern, g, mode='same', method='auto')
-    return([h,s])
+    def ConvFresnel1D(self, g, d1, d2, z, return_deriv=False):
+        lam = self.params['wavelength']
+        dPhiTol_deg = self.params['max_chirp_step_deg']
+        dx = d1/g.shape[0]
+        #first figure out sampling criterion for chirp
+        dx_tol = (dPhiTol_deg/180)*lam*z/(d1 + d2)  # factors of pi cancel
+        if dx > dx_tol:  # interpolate onto finer grid
+            dx = dx_tol
+            xo = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, g.shape[0])  # old grid
+            nx = int(d1/dx)
+            x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # new grid
+            dx = x[1] - x[0]
+            interp = interp1d(xo, g, 'quadratic', fill_value='extrapolate')
+            g = interp(x)
+        else:
+            nx = g.shape[0]
+            x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # grid
+        ns = int((d1 + d2)/dx)
+        s = np.linspace(-d1/2 - d2/2 + dx/2, d1/2 + d2/2 - dx/2, ns)
+        kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel (Goodman 4-16)
+        # propagated field is given by h*p
+        h = conv(kern, g, mode='same', method='fft')
+        #p = -1j*np.exp(2j*np.pi*z/lam)/(lam*z)  # prefactor - causes unwanted oscillations with z
+        p = 1/(lam*z)
+        if not return_deriv:
+            return([p*h,s])
+        #dpdz = (1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
+        dpdz = -1/(lam*z*z)
+        dkerndz = -1j*np.pi*s*s*kern/(lam*z*z)
+        dhdz = conv(dkerndz, g, mode='same', method='fft')
+        return([p*h, dpdz*h + p*dhdz, s])
 
 
-def propTF(u1, L, lam, z):
-    M = u1.shape[0]
-    N = u1.shape[1]
-    assert M == N
-    dx = L/M
-    fx = np.linspace(-1/(2*dx), 1/(2*dx) - 1/L, M)
-    FX, FY = np.meshgrid(fx, fx)
-    H = np.exp(-1j*np.pi*lam*z*(FX*FX + FY*FY))
-    H = np.fft.fftshift(H)
-    U1 = np.fft.fft2(np.fft.fftshift(u1))
-    U2 = H*U1
-    U2 = np.fft.ifftshift(np.fft.ifft2(U2))
-    return(U2)
-
-#rectangle function.  Note to make a square that is length w on a side,
-#   use:  X1, Y1 = np.meshgrid(x,y); u = rect1D(X1/2/w)*rect1D(Y1/2/w)
-def rect1D(x):
-    assert x.ndim == 2
-    f = np.zeros(x.shape)
-    for m in range(x.shape[0]):
-        for n in range(x.shape[1]):
-            if abs(x[m,n]) <= 1:
-                f[m,n] = 1
-    return(f)
-
+    #Apply thin lens phase transformation.
+    # g - electric field impinging on lens
+    # x - spatial coordinate
+    # ceneter - center of lens relative to zero of x
+    # f - lens focal length (same units as x and wavelength)
+    def ApplyThinLens(self, g, x, center, f, return_deriv=False):
+        lam = self.params['wavelength']
+        if g.shape != x.shape:
+            raise Exception("Input field and spatial grid must have same dimensions.")
+        h = g*np.exp(-1j*np.pi(x - center)*(x - center)/(f*lam))
+        if not return_deriv:
+            return([h,x])
+        dhdc = 2j*np.pi*(x - center)*h/(lam*f)
+        return([h, dhdc, x])
 
 #  this zero pad function gives rise to purely real myfft with symm. input
 def myzp(f, npad):  # zero-pad function for pupil fields
