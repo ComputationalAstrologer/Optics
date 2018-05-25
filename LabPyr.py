@@ -15,15 +15,16 @@ params is a dictionary of the basic parameters of the numerical model
 import numpy as np
 from scipy.signal import convolve as conv
 from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
 
 pyrparams = dict()  # dict of nominal optical system paramers
 pyrparams['wavelength'] = 0.8 # wavelength (microns)
 pyrparams['indref'] = 1.45 # pyramid index of refraction
 pyrparams['pslope'] = 3. # slope of pyramid faces relative to horizontal (degrees)  
-pyrparams['beam_diam'] = 1.e4 # input beam diameter (microns)
-pyrparams['d_e2l1'] = 1.e5 # nominal distance from entrance pupil to lens1
-pyrparams['f1'] = 1.e6 # focal length of lens #1 (focuses light on pyramid tip)
-pyrparams['d_p2l2'] = 1.e5 # distance from pyramid tip to lens 1 (corrected for pyramid glass)
+pyrparams['beam_diameter'] = 1.e3 # input beam diameter (microns)
+pyrparams['D_e_2_l1'] = 20.e3 # nominal distance from entrance pupil to lens1
+pyrparams['f1'] = 50.e3 # focal length of lens #1 (focuses light on pyramid tip)
+pyrparams['D_l1_2_pyr'] = 50.e3 # distance from pyramid tip to lens 1 (corrected for pyramid glass)
 pyrparams['f2'] = 1.e5 # focal length of lens #2 (makes 4 pupil images)
 pyrparams['npup'] = 33  # number of pixels in entrace pupil
 pyrparams['max_chirp_step_deg'] = 90  #maximum allowed value (degrees) in chirp step for Fresnel prop
@@ -32,42 +33,56 @@ pyrparams['max_chirp_step_deg'] = 90  #maximum allowed value (degrees) in chirp 
 #   to test numerical resolution and code algorithms/structures.
 class Pyr1D():
     def __init__(self, params=pyrparams):
+        self.params = params
+        self.grads = dict()  # dictionary of gradients
+        self.field_Start = np.ones(33)  # initial pupil field
+        self.Prop2Apex(self.field_Start)
         return
 
     # This calculates the field near the focal plane of lens1, which is near the apex of the pyramid
     # pfield - pupil plane field (assume evenly sampled)
-    def Prop2FirstFocus(self, pfield, return_dervis=True):
-        nx = pfield.shape[0]
-        diam0 = self.params['beam_diam']
-        dx = diam0/nx
-        x = np.linspace(-diam0/2 + dx/2, diam0/2 - dx/2, nx)
-        return(np.nan)
+    def Prop2Apex(self, pfield):
+        diam0 = self.params['beam_diameter']
+        z = self.params['D_e_2_l1']
+        [f, df_dparam, x] = self.ConvFresnel1D(pfield, diam0,1.5*diam0, z, return_deriv=True)
+        self.grads['D_e_2_l1'] = df_dparam
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f)))
 
-    #This resamples the field to cut computation costs.  It judges how accurately the resampled field
-    #  reproduces the original after linear interpolation.
-    # new_diam - diameter of resampled field.
-    def ResampleField(self, g, new_diam):
-        return(np.nan)
+        foc = self.params['f1']  # g, x, center, f, return_deriv=False)
+#        for key in self.grads:  # update gradients
+#            self.grads[key] = self.ApplyThinLens(self.grads[key], x, 0, foc, return_deriv=False)
+#        [f, df_dparam] = self.ApplyThinLens(f, x, 0, foc, return_deriv=True) # update field
+#        self.grads['l1_center'] = df_dparam
 
-    def ConvFresnel1D(self, g, d1, d2, z, return_deriv=False):
+        lambda_over_D =  self.params['wavelength']*foc/(2*diam0)
+        diam1 = 10*lambda_over_D
+        for key in self.grads:  # propagate gradients
+            [self.grads[key], x] = self.ConvFresnel1D(self.grads[key], 1.5*diam0, diam1, foc, return_deriv=False)
+        [f, df_dparam, x] = self.ConvFresnel1D(f, 1.5*diam0, diam1, foc, return_deriv=True) # prop field
+        self.grads['D_l1_2_apex'] = df_dparam
+        self.field_Apex = f
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f)))
+        return
+
+    def ConvFresnel1D(self, g, diam, d2, z, return_deriv=False):
         lam = self.params['wavelength']
         dPhiTol_deg = self.params['max_chirp_step_deg']
-        dx = d1/g.shape[0]
+        dx = diam/g.shape[0]
         #first figure out sampling criterion for chirp
-        dx_tol = (dPhiTol_deg/180)*lam*z/(d1 + d2)  # factors of pi cancel
+        dx_tol = (dPhiTol_deg/180)*lam*z/(diam + d2)  # factors of pi cancel
         if dx > dx_tol:  # interpolate onto finer grid
             dx = dx_tol
-            xo = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, g.shape[0])  # old grid
-            nx = int(d1/dx)
-            x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # new grid
+            xo = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, g.shape[0])  # old grid
+            nx = int(diam/dx)
+            x = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # new grid
             dx = x[1] - x[0]
             interp = interp1d(xo, g, 'quadratic', fill_value='extrapolate')
             g = interp(x)
         else:
             nx = g.shape[0]
-            x = np.linspace(-d1/2 + dx/2, d1/2 - dx/2, nx)  # grid
-        ns = int((d1 + d2)/dx)
-        s = np.linspace(-d1/2 - d2/2 + dx/2, d1/2 + d2/2 - dx/2, ns)
+            x = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # grid
+        ns = 1 + int((diam + d2)/dx)
+        s = np.linspace(-diam/2 - d2/2 + dx/2, diam/2 + d2/2 - dx/2, ns)
         kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel (Goodman 4-16)
         # propagated field is given by h*p
         h = conv(kern, g, mode='same', method='fft')
@@ -81,7 +96,6 @@ class Pyr1D():
         dhdz = conv(dkerndz, g, mode='same', method='fft')
         return([p*h, dpdz*h + p*dhdz, s])
 
-
     #Apply thin lens phase transformation.
     # g - electric field impinging on lens
     # x - spatial coordinate
@@ -91,11 +105,20 @@ class Pyr1D():
         lam = self.params['wavelength']
         if g.shape != x.shape:
             raise Exception("Input field and spatial grid must have same dimensions.")
-        h = g*np.exp(-1j*np.pi(x - center)*(x - center)/(f*lam))
+        h = g*np.exp(-1j*np.pi*(x - center)*(x - center)/(f*lam))
         if not return_deriv:
-            return([h,x])
+            return(h)
         dhdc = 2j*np.pi*(x - center)*h/(lam*f)
-        return([h, dhdc, x])
+        return([h, dhdc])
+
+    #This downsamples the field to cut computation costs.  It judges how accurately the downsampled field
+    #  reproduces the original with nearest neighbor interpolation.  The downsampled field is itself
+    #  calculated with a more sophisticated interpolation.  Returns downsampled field and new grid.
+    # new_diam - diameter of resampled field.
+    def DownSampleField(self, g, x, new_diam):
+        return(np.nan)
+
+
 
 #  this zero pad function gives rise to purely real myfft with symm. input
 def myzp(f, npad):  # zero-pad function for pupil fields
