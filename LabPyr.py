@@ -26,8 +26,8 @@ pyrparams['D_e_2_l1'] = 20.e3 # nominal distance from entrance pupil to lens1
 pyrparams['f1'] = 50.e3 # focal length of lens #1 (focuses light on pyramid tip)
 pyrparams['D_l1_2_pyr'] = 50.e3 # distance from pyramid tip to lens 1 (corrected for pyramid glass)
 pyrparams['f2'] = 1.e5 # focal length of lens #2 (makes 4 pupil images)
-pyrparams['npup'] = 33  # number of pixels in entrace pupil
-pyrparams['max_chirp_step_deg'] = 90  #maximum allowed value (degrees) in chirp step for Fresnel prop
+pyrparams['max_chirp_step_deg'] = 60  # maximum allowed value (degrees) in chirp step for Fresnel prop
+pyrparams['max_lens_step_deg'] = 20  # maximum step size allowed for lens phase screen
 
 # This simulator has only 1 dimension transverse to the optical axis.  The purpose is
 #   to test numerical resolution and code algorithms/structures.
@@ -36,53 +36,88 @@ class Pyr1D():
         self.params = params
         self.grads = dict()  # dictionary of gradients
         self.field_Start = np.ones(33)  # initial pupil field
-        self.Prop2Apex(self.field_Start)
+        #self.Prop2Apex(self.field_Start)
+        self.FocusEntrance(self.field_Start)
+        return
+
+    #This runs a test for bringing the entrance pupil to a focus
+    def FocusEntrance(self, pfield):
+        diam0 = self.params['beam_diameter']
+        foc = self.params['f1']
+        dx = diam0/pfield.shape[0]
+        x = np.linspace(-diam0/2 + dx/2, diam0/2 - dx/2, pfield.shape[0])
+
+        print("initial x.shape= " + str(x.shape))
+        lfield, x = self.ApplyThinLens(pfield, x, 0., foc, return_deriv=False)
+
+        print("post lens x.shape= " + str(x.shape))
+        
+        plt.figure()
+        plt.plot(x, np.angle(lfield)*180/np.pi,'bo-')
+
+        lambda_over_D =  self.params['wavelength']*foc/diam0
+        diam1 = 5*lambda_over_D
+        ffield, x = self.ConvFresnel1D(lfield, x, diam1, foc, return_deriv=False)
+        print("post prop x.shape= " + str(x.shape))
+
+        plt.figure()
+        plt.plot(x/lambda_over_D, np.real(ffield*np.conj(ffield)),'kx-')
+
         return
 
     # This calculates the field near the focal plane of lens1, which is near the apex of the pyramid
     # pfield - pupil plane field (assume evenly sampled)
     def Prop2Apex(self, pfield):
         diam0 = self.params['beam_diameter']
+        nxi = pfield.shape[0]
+        dxi = diam0/nxi 
+        xi = np.linspace(-diam0/2 + dxi/2, diam0/2 - dxi/2, nxi)
         z = self.params['D_e_2_l1']
-        [f, df_dparam, x] = self.ConvFresnel1D(pfield, diam0,1.5*diam0, z, return_deriv=True)
+        [f, df_dparam, x] = self.ConvFresnel1D(pfield, xi,1.5*diam0, z, return_deriv=True)
         self.grads['D_e_2_l1'] = df_dparam
         plt.figure(); plt.plot(x, np.real(f*np.conj(f)))
 
         foc = self.params['f1']  # g, x, center, f, return_deriv=False)
-#        for key in self.grads:  # update gradients
-#            self.grads[key] = self.ApplyThinLens(self.grads[key], x, 0, foc, return_deriv=False)
-#        [f, df_dparam] = self.ApplyThinLens(f, x, 0, foc, return_deriv=True) # update field
-#        self.grads['l1_center'] = df_dparam
+        for key in self.grads:  # update gradients
+            self.grads[key], x = self.ApplyThinLens(self.grads[key], x, 0, foc, return_deriv=False)
+        [f, df_dparam, x] = self.ApplyThinLens(f, x, 0, foc, return_deriv=True) # update field
+        self.grads['l1_center'] = df_dparam
 
-        lambda_over_D =  self.params['wavelength']*foc/(2*diam0)
+        lambda_over_D =  self.params['wavelength']*foc/diam0
         diam1 = 10*lambda_over_D
         for key in self.grads:  # propagate gradients
-            [self.grads[key], x] = self.ConvFresnel1D(self.grads[key], 1.5*diam0, diam1, foc, return_deriv=False)
-        [f, df_dparam, x] = self.ConvFresnel1D(f, 1.5*diam0, diam1, foc, return_deriv=True) # prop field
+            self.grads[key], x = self.ConvFresnel1D(self.grads[key], x, diam1, foc, return_deriv=False)
+        f, df_dparam, x = self.ConvFresnel1D(f, 1.5*diam0, diam1, foc, return_deriv=True) # prop field
         self.grads['D_l1_2_apex'] = df_dparam
         self.field_Apex = f
         plt.figure(); plt.plot(x, np.real(f*np.conj(f)))
         return
 
-    def ConvFresnel1D(self, g, diam, d2, z, return_deriv=False):
+    #1D Fresenel prop using convolution in the spatial domain
+    # g - vector of complex-valued field in the inital plane
+    # x - vector of coordinates in initial plane, corresponding to bin center locaitons
+    # d2 - diameter of region to be calculated in output plane
+    # z - propagation distance
+    # return_derive == True to return deriv. of output field WRT z
+    def ConvFresnel1D(self, g, x, d2, z, return_deriv=False):
+        if g.shape != x.shape:
+            raise Exception("Input field and grid must have same dimensions.")
         lam = self.params['wavelength']
         dPhiTol_deg = self.params['max_chirp_step_deg']
-        dx = diam/g.shape[0]
+        [dx, diam] = self.GetDxAndDiam(x)
+        nx = g.shape[0]
         #first figure out sampling criterion for chirp
         dx_tol = (dPhiTol_deg/180)*lam*z/(diam + d2)  # factors of pi cancel
         if dx > dx_tol:  # interpolate onto finer grid
             dx = dx_tol
-            xo = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, g.shape[0])  # old grid
-            nx = int(diam/dx)
-            x = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # new grid
-            dx = x[1] - x[0]
-            interp = interp1d(xo, g, 'quadratic', fill_value='extrapolate')
-            g = interp(x)
-        else:
-            nx = g.shape[0]
-            x = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # grid
+            nx = 1 + int(diam/dx)
+            dx = diam/nx
+            xnew = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # new grid
+            interp = interp1d(x, g, 'quadratic', fill_value='extrapolate')
+            g = interp(xnew)
+            x = xnew
         ns = 1 + int((diam + d2)/dx)
-        s = np.linspace(-diam/2 - d2/2 + dx/2, diam/2 + d2/2 - dx/2, ns)
+        s = np.linspace(-diam/2 - d2/2 + dx/2, diam/2 + d2/2 - dx/2, ns) # spatial grid of output plane
         kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel (Goodman 4-16)
         # propagated field is given by h*p
         h = conv(kern, g, mode='same', method='fft')
@@ -102,14 +137,35 @@ class Pyr1D():
     # ceneter - center of lens relative to zero of x
     # f - lens focal length (same units as x and wavelength)
     def ApplyThinLens(self, g, x, center, f, return_deriv=False):
-        lam = self.params['wavelength']
         if g.shape != x.shape:
             raise Exception("Input field and spatial grid must have same dimensions.")
-        h = g*np.exp(-1j*np.pi*(x - center)*(x - center)/(f*lam))
+        [dx, diam] = self.GetDxAndDiam(x)
+        lam = self.params['wavelength']
+        max_step = self.params['max_lens_step_deg']*np.pi/180
+        dx_tol = max_step*lam*f/(2*np.pi*(diam/2 + np.abs(center)))
+        if dx > dx_tol:  # interpolate onto higher resolution grid
+            nx = int(diam/dx_tol) + 1
+            dx = diam/nx
+            xnew = np.linspace(-diam/2 + dx/2, diam/2 + dx/2, nx)
+            interp = interp1d(x, g, 'quadratic', fill_value='extrapolate')
+            g = interp(xnew)
+        else:
+            xnew = x
+        h = g*np.exp(-1j*np.pi*(xnew - center)*(xnew - center)/(f*lam))
         if not return_deriv:
-            return(h)
+            return([h, xnew])
         dhdc = 2j*np.pi*(x - center)*h/(lam*f)
-        return([h, dhdc])
+        return([h, dhdc, xnew])
+
+    # assuming a regular spaced grid with values at bin centers,
+    #  get spacing and diameter from spatial grid x
+    def GetDxAndDiam(self, x):  # assumes x values are bin centers
+        nx = x.shape[0]
+        dx = x[1] - x[0]
+        diam = (x[-1] - x[0])*(1 + 1/(nx - 1))
+        assert diam > 0
+        assert dx > 0
+        return([dx, diam])
 
     #This downsamples the field to cut computation costs.  It judges how accurately the downsampled field
     #  reproduces the original with nearest neighbor interpolation.  The downsampled field is itself
