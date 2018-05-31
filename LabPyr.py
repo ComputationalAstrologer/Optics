@@ -22,16 +22,17 @@ import matplotlib.pyplot as plt
 pyrparams = dict()
 pyrparams['wavelength'] = 0.8 # wavelength (microns)
 pyrparams['indref'] = 1.45 # pyramid index of refraction
-pyrparams['pslope'] = 9. # slope of pyramid faces relative to horizontal (degrees)  
+pyrparams['pslope'] = 4. # slope of pyramid faces relative to horizontal (degrees)  
 pyrparams['beam_diameter'] = 1.e3 # input beam diameter (microns)
 pyrparams['D_e_2_l1'] = 20.e3 # nominal distance from entrance pupil to lens1
 pyrparams['f1'] = 50.e3 # focal length of lens #1 (focuses light on pyramid tip)
 pyrparams['D_l1_2_pyr'] = 50.e3 # distance from pyramid tip to lens 1 (corrected for pyramid glass)
 pyrparams['apex_diam'] = 8 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
-pyrparams['D_foc_2_l2'] = 0.5e3 # distance from focus to lens #2
-pyrparams['f2'] = 0.5e3 # focal length of lens #2 (makes 4 pupil images)
-pyrparams['diam_lens2'] = 0.25e3 # effective diameter of lens2 (set by a stop)
+pyrparams['D_foc_2_l2'] = 50.e3 # distance from focus to lens #2 (includes effective OPL thru prism)
+pyrparams['f2'] = 50.e3 # focal length of lens #2 (makes 4 pupil images)
+pyrparams['diam_lens2'] = 6.e3 # effective diameter of lens2 (set by a stop)
 pyrparams['D_l2_2_detector'] = 10.e3 # distrance from lens2 to detector
+pyrparams['detector_width'] = 6.e3 # width of detector
 pyrparams['max_chirp_step_deg'] = 30  # maximum allowed value (degrees) in chirp step for Fresnel prop
 pyrparams['max_lens_step_deg'] = 15  # maximum step size allowed for lens phase screen
 pyrparams['max_pyramid_step_deg'] = 10 # maximum step (degrees) allowed for pyramid phase ramp
@@ -39,23 +40,30 @@ pyrparams['max_pyramid_step_deg'] = 10 # maximum step (degrees) allowed for pyra
 # This simulator has only 1 dimension transverse to the optical axis.  The purpose is
 #   to test numerical resolution and code algorithms/structures.
 class Pyr1D():
-    def __init__(self, params=pyrparams):
+    def __init__(self, pupil_field=None, params=pyrparams):
         self.params = params
         self.grads = dict()  # dictionary of gradients
-        self.field_Start = np.ones(33)  # initial pupil field
-        #self.Prop1D(self.field_Start)
-        #self.FocusEntrance1D(self.field_Start)
+        if pupil_field is None:
+            self.field_Start = np.ones(33)  # initial pupil field
+        else:
+            self.field_Start = pupil_field
+        nx = self.field_Start.shape[0]
+        diam0 = self.params['beam_diameter']
+        dx = diam0/nx
+        self.x_Start = np.linspace(-diam0/2 + dx/2, diam0/2 - dx/2, nx)  # initial spatial grid
+
+        #self.Prop1D()
+        #self.FocusEntrance1D()
         return
 
     #This runs a test for bringing the entrance pupil to a focus
-    def FocusEntrance1D(self, pfield):
+    def FocusEntrance1D(self):
         diam0 = self.params['beam_diameter']
         foc = self.params['f1']
-        dx = diam0/pfield.shape[0]
-        x = np.linspace(-diam0/2 + dx/2, diam0/2 - dx/2, pfield.shape[0])
+        x = self.x_Start
 
         print("initial x.shape= " + str(x.shape))
-        lfield, x = self.ApplyThinLens1D(pfield, x, 0., foc, return_derivs=False)
+        lfield, x = self.ApplyThinLens1D(self.field_Start, x, 0., foc, return_derivs=False)
 
         print("post lens x.shape= " + str(x.shape))
         
@@ -73,23 +81,19 @@ class Pyr1D():
 
     # This calculates the field near the focal plane of lens1, which is near the apex of the pyramid
     # pfield - pupil plane field (assume evenly sampled)
-    def Prop1D(self, pfield):
+    def Prop1D(self):
 
-        # intial field in entrance pupil
         diam0 = self.params['beam_diameter']
-        nx = pfield.shape[0]
-        dx = diam0/nx
-        x = np.linspace(-diam0/2 + dx/2, diam0/2 - dx/2, nx)  # initial spatial grid
-
-        print("initial x.shape= " + str(x.shape))
+        print("initial x.shape= " + str(self.x_Start.shape))
 
         # Fresnel prop to lens #1
         z = self.params['D_e_2_l1']
-        [f, df_dparam, x] = self.ConvFresnel1D(pfield, x,1.2*diam0, z, return_derivs=True)
+        [f, df_dparam, x] = self.ConvFresnel1D(self.field_Start, self.x_Start,1.2*diam0, z, return_derivs=True)
         self.grads['D_e_2_l1'] = df_dparam
 
         print("after prop to lens1 x.shape= " + str(x.shape))
-        plt.figure(); plt.plot(x, np.real(f*np.conj(f))); plt.title('after 1st Fresnel prop')
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f))); 
+        plt.title('Intensity impinging on Lens #1'); plt.xlabel("distance ($\mu$m)")
 
         # apply lens #1
         foc = self.params['f1']
@@ -110,12 +114,13 @@ class Pyr1D():
         self.grads['D_l1_2_apex'] = df_dparam
 
         print("after prop to focus x.shape= " + str(x.shape))
-        plt.figure(); plt.plot(x, np.real(f*np.conj(f))); plt.title('intensity in first focal plane')
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f)));
+        plt.title("Intensity at focus (pyramid apex)"); plt.xlabel("distance ($\mu$m)")
 
         # Apply phase ramp caused by pyramid
         for key in self.grads:
-            self.grads[key], _ = self.ApplyPyramidPhaseRamp1D(self.grads[key], x, 0., return_derivs=False)
-        f, df_dparam, x = self.ApplyPyramidPhaseRamp1D(f, x, 0, return_derivs=True)
+            self.grads[key], _ = self.ApplyPyramidPhaseRamp1D(self.grads[key], x, 0., return_derivs=False, no_apex=False)
+        f, df_dparam, x = self.ApplyPyramidPhaseRamp1D(f, x, 0, return_derivs=True, no_apex=False)
         self.grads['pyramid_center'] = df_dparam
 
         print("after pyramid x.shape= " + str(x.shape))
@@ -128,7 +133,9 @@ class Pyr1D():
         f, df_dparam, x = self.ConvFresnel1D(f, x, diam2, z, return_derivs=True)
         self.grads['D_foc_2_l2'] = df_dparam
 
-        print("after prop 2 lens2 x.shape= " + str(x.shape))
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f)));
+        plt.title('Intensity impinging on lens2'); plt.xlabel("distance ($\mu$m)")
+        print("after prop to lens2 x.shape= " + str(x.shape))
 
         #apply lens #2
         foc = self.params['f2']
@@ -141,17 +148,25 @@ class Pyr1D():
 
         # Fresnel prop to detector
         z = self.params['D_l2_2_detector']
-        
+        diam2 = self.params['detector_width']
+        for key in self.grads:  # propagate gradients
+            self.grads[key], _ = self.ConvFresnel1D(self.grads[key], x, diam2, z, return_derivs=False)
+        f, df_dparam, x = self.ConvFresnel1D(f, x, diam2, z, return_derivs=True)
+        self.grads['D_l2_2_detector'] = df_dparam
+
+        print("at detector x.shape= " + str(x.shape))
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f)));
+        plt.title('Intensity at detector'); plt.xlabel("distance ($\mu$m)")
 
         return
 
     #1D Fresenel prop using convolution in the spatial domain
     # g - vector of complex-valued field in the inital plane
     # x - vector of coordinates in initial plane, corresponding to bin center locaitons
-    # d2 - diameter of region to be calculated in output plane
+    # diam1 - diameter of region to be calculated in output plane
     # z - propagation distance
     # return_derivse == True to return deriv. of output field WRT z
-    def ConvFresnel1D(self, g, x, d2, z, return_derivs=False):
+    def ConvFresnel1D(self, g, x, diam1, z, return_derivs=False):
         if g.shape != x.shape:
             raise Exception("Input field and grid must have same dimensions.")
         lam = self.params['wavelength']
@@ -159,7 +174,7 @@ class Pyr1D():
         dx, diam = self.GetDxAndDiam(x)
         nx = g.shape[0]
         #first figure out sampling criterion for chirp
-        dx_tol = (dPhiTol_deg/180)*lam*z/(diam + d2)  # factors of pi cancel
+        dx_tol = (dPhiTol_deg/180)*lam*z/(diam + diam1)  # factors of pi cancel
         if dx > dx_tol:  # interpolate g onto finer grid
             dx = dx_tol
             nx = 1 + int(diam/dx)
@@ -169,10 +184,10 @@ class Pyr1D():
             g = interp(xnew)
             x = xnew
 
-        ns = int(np.round(diam + d2)/dx)
-        s = np.linspace(-diam/2 - d2/2 + dx/2, diam/2 + d2/2 - dx/2, ns) # spatial grid of extended kernel
-        nt = int(np.round(d2/dx))
-        t = np.linspace(-d2/2 + dx/2, d2/2 - dx/2, nt)  # output spatial grid
+        ns = int(np.round(diam + diam1)/dx)
+        s = np.linspace(-diam/2 - diam1/2 + dx/2, diam/2 + diam1/2 - dx/2, ns) # spatial grid of extended kernel
+        nt = int(np.round(diam1/dx))
+        t = np.linspace(-diam1/2 + dx/2, diam1/2 - dx/2, nt)  # output spatial grid
 
         kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel (Goodman 4-16)
         # propagated field is given by h*p
@@ -196,7 +211,9 @@ class Pyr1D():
     # g - input field
     # x - input spatial grid
     # center - location of pyramid center with respect to x (same units as x)
-    def ApplyPyramidPhaseRamp1D(self, g, x, center, return_derivs=False):
+    # return_derivs - duh
+    # no_apex - if True, apex is removed and the beam is uniformly tilted
+    def ApplyPyramidPhaseRamp1D(self, g, x, center, return_derivs=False, no_apex=False):
         if g.shape != x.shape:
             raise Exception("Input field and spatial grid must have same dimensions.")
         lam = self.params['wavelength']
@@ -204,6 +221,8 @@ class Pyr1D():
         pyrparams['indref']
         q = self.params['indref'] - 1  # index of refraction - 1
         ramp = 2*np.pi*q*np.tan(pslope)*np.abs(x - center)/lam  # z = -|x - center|*tan(theta)
+        if no_apex:
+            ramp = 2*np.pi*q*np.tan(pslope)*(x - center)/lam
         phase_diff = np.abs(ramp[1] - ramp[0])*180/np.pi
         if phase_diff > self.params['max_pyramid_step_deg']:  # if too big, we must resolve the phase ramp better
             dx, diam = self.GetDxAndDiam(x)
@@ -212,6 +231,8 @@ class Pyr1D():
             dx = diam/nx
             xnew = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)
             ramp = 2*np.pi*q*np.tan(pslope)*np.abs(xnew - center)/lam
+            if no_apex:
+                ramp = 2*np.pi*q*np.tan(pslope)*(xnew - center)/lam
             interp = interp1d(x, g, 'quadratic', fill_value='extrapolate')
             g = interp(xnew)
             x = xnew
@@ -231,14 +252,14 @@ class Pyr1D():
     # g - electric field impinging on lens
     # x - spatial coordinate
     # ceneter - center of lens relative to zero of x
-    # f - lens focal length (same units as x and wavelength)
-    def ApplyThinLens1D(self, g, x, center, f, return_derivs=False):
+    # fl - lens focal length (same units as x and wavelength)
+    def ApplyThinLens1D(self, g, x, center, fl, return_derivs=False):
         if g.shape != x.shape:
             raise Exception("Input field and spatial grid must have same dimensions.")
         [dx, diam] = self.GetDxAndDiam(x)
         lam = self.params['wavelength']
         max_step = self.params['max_lens_step_deg']*np.pi/180
-        dx_tol = max_step*lam*f/(2*np.pi*(diam/2 + np.abs(center)))
+        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.abs(center)))
         if dx > dx_tol:  # interpolate onto higher resolution grid
             nx = int(diam/dx_tol) + 1
             dx = diam/nx
@@ -247,10 +268,10 @@ class Pyr1D():
             g = interp(xnew)
         else:
             xnew = x
-        h = g*np.exp(-1j*np.pi*(xnew - center)*(xnew - center)/(f*lam))
+        h = g*np.exp(-1j*np.pi*(xnew - center)*(xnew - center)/(fl*lam))
         if not return_derivs:
             return([h, xnew])
-        dhdc = 2j*np.pi*(x - center)*h/(lam*f)
+        dhdc = 2j*np.pi*(xnew - center)*h/(lam*fl)
         return([h, dhdc, xnew])
 
     # assuming a regular spaced grid with values at bin centers,
