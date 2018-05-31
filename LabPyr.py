@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed May  9 14:55:31 2018
-@author: rfrazin
+@author:
 
 This code is a descendant of Pyr.py.   This version is designed to accurately
 reproduce lab measurements, and so allows for different paddings of the two 
