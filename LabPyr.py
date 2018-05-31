@@ -149,14 +149,26 @@ class Pyr1D():
         # Fresnel prop to detector
         z = self.params['D_l2_2_detector']
         diam2 = self.params['detector_width']
+
+        if False:  #  compare full result to maintain_dx results
+            # get full result
+            fc, xc = self.ConvFresnel1D(f, x, diam2, z, return_derivs=False, maintain_dx=False)
+            plt.figure(); plt.plot(xc, np.real(fc*np.conj(fc))); plt.title('Intensity at detector, full res'); plt.xlabel("distance ($\mu$m)")
+            print("at detector xc.shape= " + str(xc.shape))
+            # get maintain_dx result
+            fc, xc = self.ConvFresnel1D(f, x, diam2, z, return_derivs=False, maintain_dx=True)
+            plt.figure(); plt.plot(xc, np.real(fc*np.conj(fc))); plt.title('Intensity at detector, maintain_dx'); plt.xlabel("distance ($\mu$m)")
+            print("at detector xc.shape= " + str(xc.shape))
+
+        # maintain_dx=True worked well!
         for key in self.grads:  # propagate gradients
-            self.grads[key], _ = self.ConvFresnel1D(self.grads[key], x, diam2, z, return_derivs=False)
-        f, df_dparam, x = self.ConvFresnel1D(f, x, diam2, z, return_derivs=True)
+            self.grads[key], _ = self.ConvFresnel1D(self.grads[key], x, diam2, z, return_derivs=False, maintain_dx=True)
+        f, df_dparam, x = self.ConvFresnel1D(f, x, diam2, z, return_derivs=True, maintain_dx=True)
         self.grads['D_l2_2_detector'] = df_dparam
 
         print("at detector x.shape= " + str(x.shape))
-        plt.figure(); plt.plot(x, np.real(f*np.conj(f)));
-        plt.title('Intensity at detector'); plt.xlabel("distance ($\mu$m)")
+        plt.figure(); plt.plot(x, np.real(f*np.conj(f))); plt.title('Intensity at detector'); plt.xlabel("distance ($\mu$m)")
+
 
         return
 
@@ -165,8 +177,12 @@ class Pyr1D():
     # x - vector of coordinates in initial plane, corresponding to bin center locaitons
     # diam1 - diameter of region to be calculated in output plane
     # z - propagation distance
-    # return_derivse == True to return deriv. of output field WRT z
-    def ConvFresnel1D(self, g, x, diam1, z, return_derivs=False):
+    # return_derivs - True to return deriv. of output field WRT z
+    # maintain_dx - False allows full sampling of chirp according to self.params['max_chirp_step_deg']
+    #             - True forces zeroing the kernel beyond where self.params['max_chirp_step_deg'] 
+    #                    exceeded for the dx given in x input array
+    #     Thus, True can dramatically shrink the size of the output array
+    def ConvFresnel1D(self, g, x, diam1, z, return_derivs=False, maintain_dx=False):
         if g.shape != x.shape:
             raise Exception("Input field and grid must have same dimensions.")
         lam = self.params['wavelength']
@@ -175,7 +191,7 @@ class Pyr1D():
         nx = g.shape[0]
         #first figure out sampling criterion for chirp
         dx_tol = (dPhiTol_deg/180)*lam*z/(diam + diam1)  # factors of pi cancel
-        if dx > dx_tol:  # interpolate g onto finer grid
+        if dx > dx_tol and not maintain_dx:  # interpolate g onto finer grid
             dx = dx_tol
             nx = 1 + int(diam/dx)
             dx = diam/nx
@@ -189,7 +205,12 @@ class Pyr1D():
         nt = int(np.round(diam1/dx))
         t = np.linspace(-diam1/2 + dx/2, diam1/2 - dx/2, nt)  # output spatial grid
 
+        #calculate Fresnel convoltion kernel
         kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel (Goodman 4-16)
+        if maintain_dx:  # where does |s| exceed the max step for this dx?
+            s_max = lam*z*self.params['max_chirp_step_deg']/(360*dx)
+            null_ind = np.where(np.abs(s) > s_max)[0]
+            kern[null_ind] = 0
         # propagated field is given by h*p
         h = conv(kern, g, mode='same', method='fft')  # h is on the s spatial grid
         interp = interp1d(s, h, 'quadratic')  # put h on the t spatial grid
@@ -289,37 +310,4 @@ class Pyr1D():
     #  calculated with a more sophisticated interpolation.  Returns downsampled field and new grid.
     # new_diam - diameter of resampled field.
     def DownSampleField(self, g, x, new_diam):
-        return(np.nan)
-
-
-
-#  this zero pad function gives rise to purely real myfft with symm. input
-def myzp(f, npad):  # zero-pad function for pupil fields
-    if f.ndim == 1:
-        nfield = len(f) + 1
-        if np.mod(nfield, 2) != 0:
-            raise Exception("len(f) must be odd.")
-        if npad <= len(f):
-            raise Exception("npad must be greater than len(f)")
-        if np.mod(npad, 2) == 1:
-            raise Exception("npad must be even.")
-        g = np.zeros(npad).astype('complex')
-        g[int(npad/2) - int(nfield/2) + 1:int(npad/2) + int(nfield/2)] = f
-        return(g)
-    elif f.ndim == 2:
-        if f.shape[0] != f.shape[1]:
-            raise Exception("f must be square (if 2D).")
-        nfield = f.shape[0] + 1
-        if np.mod(nfield, 2) != 0:
-            raise Exception("len(f) must be odd.")
-        if npad <= f.shape[0]:
-            raise Exception("npad must be greater than len(f)")
-        if np.mod(npad, 2) == 1:
-            raise Exception("npad must be even.")
-        g = np.zeros((npad, npad)).astype('complex')
-        g[int(npad/2) - int(nfield/2) + 1:int(npad/2) + int(nfield/2),
-          int(npad/2) - int(nfield/2) + 1:int(npad/2) + int(nfield/2)] = f
-        return(g)
-    else:
-        raise Exception("Input array must be 1D or 2D.")
         return(np.nan)
