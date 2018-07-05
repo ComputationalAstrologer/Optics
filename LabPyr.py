@@ -14,7 +14,7 @@ params is a dictionary of the basic parameters of the numerical model
 
 import numpy as np
 from scipy.signal import convolve as conv
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, interp2d
 import matplotlib.pyplot as plt
 
 # dict of nominal optical system paramers
@@ -40,9 +40,7 @@ pyrparams['max_pyramid_step_deg'] = 10 # maximum step (degrees) allowed for pyra
 def sq(field):
     return(np.real(field*np.conj(field)))
 
-# This simulator has only 1 dimension transverse to the optical axis.  The purpose is
-#   to test numerical resolution and code algorithms/structures.
-class Pyr1D():
+class FresnelPyramid():
     def __init__(self, pupil_field=None, params=pyrparams):
         self.params = params
         self.grads = dict()  # dictionary of gradients
@@ -79,7 +77,7 @@ class Pyr1D():
     #defocus - the signed distance (microns) from the focal plane
     #   negative distances imply the plane is closer to the lens than
     #     the focal plane.
-    def PropBeamFocus(self, defocus=0):
+    def PropBeamFocus1D(self, defocus=0):
         diam0 = self.params['beam_diameter'] + 1.e3
         z = self.params['D_e_2_l1']
         field, x = self.ConvFresnel1D(self.field_Start, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
@@ -315,35 +313,36 @@ class Pyr1D():
             nx = int(np.round(diam/dx_new))
             dx = diam/nx
             xnew = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # new grid for intial field
-            interp = interp1d(x, g, 'quadratic', fill_value='extrapolate')
-            g = interp(xnew)
+            interp = interp2d(x, x, g, 'cubic', fill_value=None)
+            g = interp(xnew, xnew)
             x = xnew
 
         # make the kernel grid (s) match x as closely as possible
         ns = int(np.round(diam + diam_out)/dx)  # number of points on extended kernel
         s = np.linspace(-diam/2 - diam_out/2 + dx/2, diam/2 + diam_out/2 - dx/2, ns) # spatial grid of extended kernel
-        indices_out = np.where(np.abs(s) < diam_out/2)[0] # get the part of s within the output grid
+        [sx, sy] = np.meshgrid(s, s, indexing='xy')
+        i_out = np.where(np.sqrt(sx*sx + sy*sy) < diam_out/2) # get the part of s within the output grid
 
         #Calculate Fresnel convoltion kernel, (Goodman 4-16)
         #  Note: the factor p = 1/(lam*z) is applied later
         #  Also note: the factor -1j*np.exp(2j*np.pi*z/lam) causes unwanted oscillations with z
-        kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel
+        kern = np.exp(1j*np.pi*(sx*sx + sy*sy)/(lam*z))  # Fresnel kernel
         if dx > dx_chirp:  # Where does |s| exceed the max step for this dx?
             s_max = lam*z*self.params['max_chirp_step_deg']/(360*dx)
-            null_ind = np.where(np.abs(s) > s_max)[0]
-            kern[null_ind] = 0
+            null_ind = np.where(np.sqrt(sx*sx + sy*sy) > s_max)
+            kern[null_ind[0], null_ind[1]] = 0
         h = conv(kern, g, mode='same', method='fft')  # h is on the s spatial grid
 
         p = 1/(lam*z)
         if not return_derivs:
-            return([p*h[indices_out], s[indices_out]])
+            return([p*h[i_out[0], i_out[1]], s[i_out[0], i_out[1]]])
         #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
         dpdz = -1/(lam*z*z)
         dkerndz = -1j*np.pi*s*s*kern/(lam*z*z)
         dhdz = conv(dkerndz, g, mode='same', method='fft')
-        s = s[indices_out]
-        h = h[indices_out]
-        dhdz = dhdz[indices_out]
+        s = s[i_out[0], i_out[1]]
+        h = h[i_out[0], i_out[1]]
+        dhdz = dhdz[i_out[0], i_out[1]]
         return([p*h, dpdz*h + p*dhdz, s])
 
 
