@@ -101,12 +101,15 @@ class FresnelPyramid():
         dx = x1d[1] - x1d[0]
         plt.figure()
         plt.plot(x1d, br1d/np.max(br1d),'x-')
-        plt.title('intensity at lens1, $\Delta x$ = ' + str(dx))
+        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
         plt.xlabel('x (microns)')
         plt.ylabel('intensity')
 
         plt.figure()
         plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('y (microns)')
 
         focal_length = self.params['f1']
         lens_center = 0
@@ -114,7 +117,7 @@ class FresnelPyramid():
         lens_center = [0, 0]
         field2d, x2d = self.ApplyThinLens2D(field2d, x2d, lens_center, focal_length, return_derivs=False)
 
-        diam1 = 250 + defocus*self.params['beam_diameter']/focal_length
+        diam1 = 350 + defocus*self.params['beam_diameter']/focal_length
         z = focal_length + defocus
         field1d, x1d = self.ConvFresnel1D(field1d, x1d, diam1, z, set_dx=True, return_derivs=False)
         field2d, x2d = self.ConvFresnel2D(field2d, x2d, diam1, z, set_dx=True, return_derivs=False)
@@ -129,8 +132,11 @@ class FresnelPyramid():
         plt.ylabel('intensity')
 
         plt.figure()
-        plt.imshow(np.sqrt(br2d/np.max(br2d)), extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
-        plt.xlabel('sqrt brightness')
+        plt.imshow(np.sqrt(br2d/np.max(br2d)), extent=[x2d[0]/5.3, x2d[-1]/5.3, x2d[0]/5.3, x2d[-1]/5.3])
+        plt.title('sqrt brightness')
+        plt.xlabel('pixels')
+        plt.ylabel('pixels')
+        plt.colorbar()
 
         return
 
