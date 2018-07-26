@@ -114,7 +114,7 @@ class FresnelPyramid():
         lens_center = [0, 0]
         field2d, x2d = self.ApplyThinLens2D(field2d, x2d, lens_center, focal_length, return_derivs=False)
 
-        diam1 = 50 + defocus*self.params['beam_diameter']/focal_length
+        diam1 = 250 + defocus*self.params['beam_diameter']/focal_length
         z = focal_length + defocus
         field1d, x1d = self.ConvFresnel1D(field1d, x1d, diam1, z, set_dx=True, return_derivs=False)
         field2d, x2d = self.ConvFresnel2D(field2d, x2d, diam1, z, set_dx=True, return_derivs=False)
@@ -341,8 +341,10 @@ class FresnelPyramid():
             nx = int(np.round(diam/dx_new))
             dx = diam/nx
             xnew = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)  # new grid for intial field
-            interp = interp2d(x, x, g, 'cubic', fill_value=None)
-            g = interp(xnew, xnew)
+            #interp2d doesn't like complex numbers.   How stupid.
+            interp_real = interp2d(x, x, np.real(g), 'cubic', fill_value=None)
+            interp_imag = interp2d(x, x, np.imag(g), 'cubic', fill_value=None)
+            g = interp_real(xnew, xnew) + 1j*interp_imag(xnew, xnew)
             x = xnew
 
         # make the kernel grid (s) match x as closely as possible
@@ -456,13 +458,15 @@ class FresnelPyramid():
         [dx, diam] = self.GetDxAndDiam(x)
         lam = self.params['wavelength']
         max_step = self.params['max_lens_step_deg']*np.pi/180
-        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.abs(center)))
+        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.sqrt(center[0]**2 + center[1]**2)))
         if dx > dx_tol:  # interpolate onto higher resolution grid
             nx = int(np.round(diam/dx_tol))
             dx = diam/nx
             xnew = np.linspace(-diam/2 + dx/2, diam/2 + dx/2, nx)
-            interp = interp2d(x, x, g, 'cubic', fill_value=None)
-            g = interp(xnew, xnew)
+            #interp2d doesn't like complex numbers.   How stupid.
+            interp_real = interp2d(x, x, np.real(g), 'cubic', fill_value=None)
+            interp_imag = interp2d(x, x, np.imag(g), 'cubic', fill_value=None)
+            g = interp_real(xnew, xnew) + 1j*interp_imag(xnew, xnew)
         else:
             xnew = x
 
