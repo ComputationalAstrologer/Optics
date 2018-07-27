@@ -22,7 +22,8 @@ import matplotlib.pyplot as plt
 pyrparams = dict()
 pyrparams['wavelength'] = 0.633 # wavelength (microns)
 pyrparams['indref'] = 1.5 # pyramid index of refraction
-pyrparams['pslope'] = 4. # slope of pyramid faces relative to horizontal (degrees)  
+pyrparams['pyramid_slope'] = 4. # slope of pyramid faces relative to horizontal (degrees)
+pyrparams['pyramid_roofsize'] = 17.6 # length of one side of square pyramid roof (microns)
 pyrparams['beam_diameter'] = 3.e3 # input beam diameter (microns)
 pyrparams['n_starting_points'] = 150  # number of resolution elements in initital beam diameter
 pyrparams['D_e_2_l1'] = 70.e3 # nominal distance from entrance pupil to lens1 (microns)
@@ -231,8 +232,101 @@ class FresnelPyramid():
         print("at detector x.shape= " + str(x.shape))
         plt.figure(); plt.plot(x, np.real(f*np.conj(f))); plt.title('Intensity at detector'); plt.xlabel("distance ($\mu$m)")
 
-
         return
+
+
+    #This applies the pyramid's phase ramp, applies re-gridding if phase-step is too big
+    # g - input field
+    # x - input spatial grid
+    # center - location of pyramid center with respect to x (same units as x)
+    # return_derivs - duh
+    # no_apex - if True, apex is removed and the beam is uniformly tilted
+    def ApplyPyramidPhaseRamp1D(self, g, x, center=0, return_derivs=False, no_apex=False):
+        if g.shape != x.shape:
+            raise Exception("Input field and spatial grid must have same dimensions.")
+        lam = self.params['wavelength']
+        pslope = self.params['pyramid_slope']*np.pi/180
+        pyrparams['indref']
+        q = self.params['indref'] - 1  # index of refraction - 1
+        ramp = 2*np.pi*q*np.tan(pslope)*np.abs(x - center)/lam  # z = -|x - center|*tan(theta)
+        if no_apex:
+            ramp = 2*np.pi*q*np.tan(pslope)*(x - center)/lam
+        phase_diff = np.abs(ramp[1] - ramp[0])*180/np.pi
+        if phase_diff > self.params['max_pyramid_step_deg']:  # if too big, we must resolve the phase ramp better
+            dx, diam = self.GetDxAndDiam(x)
+            dx *= self.params['max_pyramid_step_deg']/phase_diff
+            nx = 1 + int(np.round(diam/dx))
+            dx = diam/nx
+            xnew = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)
+            ramp = 2*np.pi*q*np.tan(pslope)*np.abs(xnew - center)/lam
+            if no_apex:
+                ramp = 2*np.pi*q*np.tan(pslope)*(xnew - center)/lam
+            interp = interp1d(x, g, 'quadratic', fill_value='extrapolate')
+            g = interp(xnew)
+            x = xnew
+        phasor = np.exp(1j*ramp)
+        if not return_derivs:
+            return([g*phasor, x])
+        pos = np.where(x - center >= 0)[0]
+        neg = np.where(x - center <  0)[0]
+        xpos = x[pos]
+        xneg = x[neg]
+        aa = - np.ones(xpos.shape)*2*np.pi*q*np.tan(pslope)/lam  # deriv WRT center for positive part
+        bb =   np.ones(xneg.shape)*2*np.pi*q*np.tan(pslope)/lam  # negative part
+        d_phasor = 1j*phasor*np.hstack([bb,aa])
+        return([g*phasor, g*d_phasor, x])
+
+    #rotate is the offset of the rotation of the pyramid (degrees)
+    #   Zero rotation correspons to pyramid edges at 45 degrees to the x-y coords
+    #tip (degrees) corresponds to rotating the pyramid about the apex in x-z plane
+    #tilt (degress)                                                      y-z
+    def ApplyPyramidPhaseRamp2D(self, g, x, center=[0,0], rotate=0, tip=0, tilt=0, return_derivs=False):
+        if g.shape[0] != x.shape[0]:
+            raise Exception("ApplyPyramidPhaseRamp2D: input field and grid must have same sampling.")
+        if g.ndim != 2:
+            raise Exception("ApplyPyramidPhaseRamp2D: input field array must be 2D.")
+        if g.shape[0] != g.shape[1]:
+            raise Exception("ApplyPyramidPhaseRamp2D: input field array must be square.")
+        if len(center) != 2:
+            raise Exception("ApplyPyramidPhaseRamp2D: center parameter must have len=2.")
+            
+        height = self.PyramidHeight2D(x, center, rotate, tip, tilt)
+        ramp = np.exp(-2j*np.pi*height*(self.params['indref'] - 1)/self.params['lambda'])
+        g *= ramp
+        if not return_derivs:
+            return([g, x])
+        # Unfortunately, I think finite differences is the best option for these derivatives.
+        #    Make sure the steps are not to small for the delta x
+        
+    def PyramidHeight2D(self, x, center, rotate, tip, tilt):
+        #calculate the height of the pyramid face.  Rotate according to (rotate, tip, tilt) params
+        tan_slope = np.tan(self.params['pyramid_slope']*np.pi/180.)
+        roof = self.params['pyramid_roofsize']/2
+        nx = x.shape[0]
+        [sx, sy] = np.meshgrid(x - center[0], x - center[1], indexing='xy')  # note coord shift
+        th = np.arctan2(sy,sx) + np.pi/4 + rotate*np.pi/180
+        sz = np.zeros(th.shape)  # face height (taken to be >= 0)
+        for k in range(nx):
+            for l in range(nx):
+                if (th[k,l] >= -np.pi/4) and (th[k,l] < np.pi/4):  # +x direction
+                    if np.abs(sx[k,l]) >= roof:
+                        sz[k,l] = (np.abs(sx[k,l]) - roof)*tan_slope
+                    sz[k,l] = sz[k,l]*np.cos(tip*np.pi/180) - sx[k,l]*np.sin(tip*np.pi/180)
+                elif (th[k,l] >= np.pi/4) and (th[k,l] < 3*np.pi/4):  # +y direction
+                    if np.abs(sy[k,l]) >= roof:
+                        sz[k,l] = (np.abs(sy[k,l]) - roof)*tan_slope
+                    sz[k,l] = sz[k,l]*np.cos(tilt*np.pi/180) - sy[k,l]*np.sin(tilt*np.pi/180)
+                elif (th[k,l] >= 3*np.pi/4) or (th[k,l] < -3*np.pi/4):  # -x direction
+                    if np.abs(sx[k,l]) >= roof:
+                        sz[k,l] = (np.abs(sx[k,l]) - roof)*tan_slope
+                    sz[k,l] = sz[k,l]*np.cos(tip*np.pi/180) - sx[k,l]*np.sin(tip*np.pi/180)
+                else:  # -y direction
+                    if np.abs(sy[k,l]) >= roof:
+                        sz[k,l] = (np.abs(sy[k,l]) - roof)*tan_slope
+                    sz[k,l] = sz[k,l]*np.cos(tilt*np.pi/180) - sy[k,l]*np.sin(tilt*np.pi/180)
+                
+        return()
+
 
     #1D Fresenel prop using convolution in the spatial domain
     # g - vector of complex-valued field in the inital plane
@@ -381,48 +475,6 @@ class FresnelPyramid():
         dhdz[i_out[0], i_out[1]] = 0.
         dhdz = dhdz[ind[0]:ind[-1] + 1, ind[0]:ind[-1] + 1]
         return([p*h, dpdz*h + p*dhdz, s[ind]])
-
-
-    #This applies the pyramid's phase ramp, applies re-gridding if phase-step is too big
-    # g - input field
-    # x - input spatial grid
-    # center - location of pyramid center with respect to x (same units as x)
-    # return_derivs - duh
-    # no_apex - if True, apex is removed and the beam is uniformly tilted
-    def ApplyPyramidPhaseRamp1D(self, g, x, center, return_derivs=False, no_apex=False):
-        if g.shape != x.shape:
-            raise Exception("Input field and spatial grid must have same dimensions.")
-        lam = self.params['wavelength']
-        pslope = self.params['pslope']*np.pi/180
-        pyrparams['indref']
-        q = self.params['indref'] - 1  # index of refraction - 1
-        ramp = 2*np.pi*q*np.tan(pslope)*np.abs(x - center)/lam  # z = -|x - center|*tan(theta)
-        if no_apex:
-            ramp = 2*np.pi*q*np.tan(pslope)*(x - center)/lam
-        phase_diff = np.abs(ramp[1] - ramp[0])*180/np.pi
-        if phase_diff > self.params['max_pyramid_step_deg']:  # if too big, we must resolve the phase ramp better
-            dx, diam = self.GetDxAndDiam(x)
-            dx *= self.params['max_pyramid_step_deg']/phase_diff
-            nx = 1 + int(np.round(diam/dx))
-            dx = diam/nx
-            xnew = np.linspace(-diam/2 + dx/2, diam/2 - dx/2, nx)
-            ramp = 2*np.pi*q*np.tan(pslope)*np.abs(xnew - center)/lam
-            if no_apex:
-                ramp = 2*np.pi*q*np.tan(pslope)*(xnew - center)/lam
-            interp = interp1d(x, g, 'quadratic', fill_value='extrapolate')
-            g = interp(xnew)
-            x = xnew
-        phasor = np.exp(1j*ramp)
-        if not return_derivs:
-            return([g*phasor, x])
-        pos = np.where(x - center >= 0)[0]
-        neg = np.where(x - center <  0)[0]
-        xpos = x[pos]
-        xneg = x[neg]
-        aa = - np.ones(xpos.shape)*2*np.pi*q*np.tan(pslope)/lam  # deriv WRT center for positive part
-        bb =   np.ones(xneg.shape)*2*np.pi*q*np.tan(pslope)/lam  # negative part
-        d_phasor = 1j*phasor*np.hstack([bb,aa])
-        return([g*phasor, g*d_phasor, x])
 
     #Apply thin lens phase transformation.
     # g - electric field impinging on lens
