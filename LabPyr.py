@@ -21,24 +21,27 @@ import FourierOptics
 # dict of nominal optical system paramers
 #  units: lengths are in microns, angles are in degrees
 pyrparams = dict()
+pyrparams['beam_diameter'] = 1.e3 # input beam diameter (microns)
 pyrparams['wavelength'] = 0.6328 # wavelength (microns)
 pyrparams['indref'] = 1.5 # pyramid index of refraction
-pyrparams['pyramid_slope'] = 4. # slope of pyramid faces relative to horizontal (degrees)
+pyrparams['pyramid_slope_deg'] = 4.5 # slope of pyramid faces relative to horizontal (degrees)
 pyrparams['pyramid_roofsize'] = 16 # length of one side of square pyramid roof (microns)
-pyrparams['beam_diameter'] = 3.e3 # input beam diameter (microns)
 pyrparams['n_starting_points'] = 150  # number of resolution elements in initital beam diameter
-pyrparams['D_e_2_l1'] = 70.e3 # nominal distance from entrance pupil to lens1 (microns)
-pyrparams['f1'] = 200.e3 # focal length of lens #1 (focuses light on pyramid tip)
-pyrparams['D_l1_2_pyr'] = 50.e3 # distance from pyramid tip to lens 1 (corrected for pyramid glass)
+pyrparams['D_e_2_l1'] = 200.e3 # nominal distance from entrance pupil to lens1 (microns)
+pyrparams['f1'] = 100.e3 # focal length of lens #1 (focuses light on pyramid tip)
+pyrparams['lens1_fill_diameter'] = 2.e3  #  computational beam width at lens#1.  This matters!
+pyrparams['beam_diameter_at_pyramid'] = 400  # focal spot size at pyramid width
+pyrparams['D_l1_2_pyr'] = 100.e3 # distance from lens1 to pyramid tip
+pyrparams['D_l1_2_detector'] = 200.e3  # distance from lens to detector in 4f system
 pyrparams['apex_diam'] = 8 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
 pyrparams['D_foc_2_l2'] = 50.e3 # distance from focus to lens #2 (includes effective OPL thru prism)
-pyrparams['f2'] = 5023.e3 # focal length of lens #2 (makes 4 pupil images)
+pyrparams['f2'] = 5023.e3 # focal length of lens #2
 pyrparams['diam_lens2'] = 6.e3 # effective diameter of lens2 (set by a stop)
 pyrparams['D_l2_2_detector'] = 10.e3 # distrance from lens2 to detector
 pyrparams['detector_width'] = 6.e3 # width of detector
-pyrparams['max_chirp_step_deg'] = 60  # maximum allowed value (degrees) in chirp step for Fresnel prop
-pyrparams['max_lens_step_deg'] = 15  # maximum step size allowed for lens phase screen
-pyrparams['max_pyramid_phase_step'] = 10  # maximum step (degrees) allowed for pyramid phase ramp
+pyrparams['max_chirp_step_deg'] = 90  # maximum allowed value (degrees) in chirp step for Fresnel prop
+pyrparams['max_lens_step_deg'] = 20 # maximum step size allowed for lens phase screen
+pyrparams['max_pyramid_phase_step'] = 20  # maximum step (degrees) allowed for pyramid phase ramp
 pyrparams['interp_style'] = 'cubic'  # type of 2d interpolator
 
 def sq(field):
@@ -145,6 +148,149 @@ class OpticalModels():
         plt.colorbar()
 
         return
+
+
+    #This simulates an f4 optical system, in which (image distance)=(object distance)=2f
+    def PropF4(self, include_pyramid=False):
+        FO = FourierOptics.FourierOptics(pyrparams)
+        obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
+        imd = self.params['D_l1_2_detector']
+        diam0 = self.params['lens1_fill_diameter']
+        
+
+        # propagate field to lens
+        z = obd
+        field1d, x1d = FO.ConvFresnel1D(self.field_Start1D, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
+        field2d, x2d = FO.ConvFresnel2D(self.field_Start2D, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
+        br1d = sq(field1d); br1d /= np.max(br1d)
+        br2d = sq(field2d); br2d /= np.max(br2d)
+
+        dx = x1d[1] - x1d[0]
+        plt.figure()
+        plt.plot(x1d, br1d,'x-')
+        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('intensity')
+        plt.figure()
+        dx = x2d[1] - x2d[0]
+        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+        plt.colorbar();
+        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('y (microns)')
+
+        #apply phase screen due to lens
+        focal_length = self.params['f1']
+        lens_center = 0
+        field1d, x1d = FO.ApplyThinLens1D(field1d, x1d, lens_center, focal_length, return_derivs=False)
+        lens_center = [0, 0]
+        field2d, x2d = FO.ApplyThinLens2D(field2d, x2d, lens_center, focal_length, return_derivs=False)
+
+        #propagate to image plane
+        z = imd
+        diam1 = self.params['beam_diameter'] + 200
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, diam1, z, set_dx=True, return_derivs=False)
+        field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam1, z, set_dx=True, return_derivs=False)
+        br1d = sq(field1d); br1d /= np.max(br1d)
+        br2d = sq(field2d); br2d /= np.max(br2d)
+
+        zd = obd + imd
+        dx = x1d[1] - x1d[0]
+        plt.figure()
+        plt.plot(x1d, br1d,'x-')
+        plt.title('intensity at detector, z = ' + str(zd/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('intensity')
+        plt.figure()
+        dx = x2d[1] - x2d[0]
+        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+        plt.colorbar();
+        plt.title('intensity at detector, z = ' + str(zd/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('y (microns)')
+
+        return
+
+    #This simulates an f4 optical system, in which (image distance)=(object distance)=2f,
+    #   except now there is an pyramid placed at a distance f from the lens
+    def PropF4Pyramid(self, pyr_dist_error=0):
+        FO = FourierOptics.FourierOptics(pyrparams)
+        obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
+        focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid tip)
+        d2pyr = self.params['D_l1_2_pyr'] + pyr_dist_error # distance from lens1 to pyramid tip
+        d_pyr_det = self.params['D_l1_2_detector'] - d2pyr
+        diam0 = self.params['lens1_fill_diameter']
+        detector_diam = 50.e3
+        
+
+        # propagate field to lens
+        z = obd
+        field1d, x1d = FO.ConvFresnel1D(self.field_Start1D, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
+        field2d, x2d = FO.ConvFresnel2D(self.field_Start2D, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
+        br1d = sq(field1d); br1d /= np.max(br1d)
+        br2d = sq(field2d); br2d /= np.max(br2d)
+
+        dx = x1d[1] - x1d[0]
+        plt.figure()
+        plt.plot(x1d, br1d,'x-')
+        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('intensity')
+        plt.figure()
+        dx = x2d[1] - x2d[0]
+        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+        plt.colorbar();
+        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('y (microns)')
+
+        #apply phase screen due to lens
+        lens_center = 0
+        field1d, x1d = FO.ApplyThinLens1D(field1d, x1d, lens_center, focal_length, return_derivs=False)
+        lens_center = [0, 0]
+        field2d, x2d = FO.ApplyThinLens2D(field2d, x2d, lens_center, focal_length, return_derivs=False)
+
+        #propagate to pyramid tip
+        z = d2pyr
+        diam_pyr = self.params['beam_diameter_at_pyramid']
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, diam_pyr, z, set_dx=True, return_derivs=False)
+        field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
+        br1d = sq(field1d); br1d /= np.max(br1d)
+        br2d = sq(field2d); br2d /= np.max(br2d)
+
+        dx = x1d[1] - x1d[0]
+        plt.figure()
+        plt.plot(x1d, br1d,'x-')
+        plt.title('intensity at pyramid, z = ' + str(d2pyr/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('intensity')
+        plt.figure()
+        dx = x2d[1] - x2d[0]
+        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+        plt.colorbar();
+        plt.title('intensity at pyramid, z = ' + str(d2pyr/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (microns)')
+        plt.ylabel('y (microns)')
+
+        
+        field1d, x1d = FO.ApplyPyramidPhaseRamp1D(field1d, x1d, center=0, no_apex=False, return_derivs=False)
+        #field2d, x2d = FO.ApplyPyramidPhaseRamp2D(field2d, x2d, center=[0,0], rotate=0, tip=0, tilt=0, return_derivs=False)
+
+        z = d_pyr_det
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, detector_diam, z, set_dx=True, return_derivs=False)
+        br1d = sq(field1d); br1d /= np.max(br1d)
+
+        dx = x1d[1] - x1d[0]
+        plt.figure()
+        plt.plot(x1d/1.e3, br1d,'x-')
+        plt.title('intensity at detector, $\Delta x$ = ' + str(dx))
+        plt.xlabel('x (mm)')
+        plt.ylabel('intensity')
+        plt.figure()
+
+
+        return
+
 
 
     # This calculates the field near the focal plane of lens1, which is near the apex of the pyramid

@@ -16,10 +16,14 @@ from scipy.interpolate import interp1d, interp2d
 
 # It works on a square computation grid, specified by a 1D spatial
 #  coordinate vector x.
-#Fresnel propogation accuracy is controlled by params['max_chirp_step_deg']
-#Thin lens accuracy is controlled by params['max_lens_step_deg']
-#The pyramid accuracy is set by params['max_pyramid_phase_step']
-#Resampling method is set by params['interp_style']
+#params is a dict of stuff you need, including:
+# params['wavelength'] - lambda (recommend micron units)
+# params['max_chirp_step_deg'] (degrees) controls Fresnel propogation accuracy is controlled by 
+# params['max_lens_step_deg'] (degrees) may require increasing resolution for lens phase screen
+# params['max_pyramid_phase_step'] may require increasing the resolutin for the pyramid screen
+# params['interp_style'] is passed to scipy.interpolate.interp2d (used for up-sampling field)
+# params['pyramid_slope_deg'] (degrees) is the slope of the pyramid relative to the horizontal
+
 class FourierOptics():
     def __init__(self, params):
         self.params = params
@@ -31,13 +35,13 @@ class FourierOptics():
     # center - location of pyramid center with respect to x (same units as x)
     # return_derivs - duh
     # no_apex - if True, apex is removed and the beam is uniformly tilted
-    def ApplyPyramidPhaseRamp1D(self, g, x, center=0, return_derivs=False, no_apex=False):
+    def ApplyPyramidPhaseRamp1D(self, g, x, center=0, no_apex=False, return_derivs=False):
         if g.shape != x.shape:
             raise Exception("Input field and spatial grid must have same dimensions.")
         if no_apex:
             assert not return_derivs
         lam = self.params['wavelength']
-        pslope = self.params['pyramid_slope']*np.pi/180
+        pslope = self.params['pyramid_slope_deg']*np.pi/180
         q = self.params['indref'] - 1  # index of refraction - 1
         ramp = 2*np.pi*q*np.tan(pslope)*np.abs(x - center)/lam  # z = -|x - center|*tan(theta)
         if no_apex:
@@ -78,9 +82,9 @@ class FourierOptics():
         if len(center) != 2:
             raise Exception("ApplyPyramidPhaseRamp2D: center parameter must have len=2.")
 
-        lam = self.params['lambda']
+        lam = self.params['wavelength']
         indref = self.params['indref']
-        tslope = np.tan(self.params['pyramid_slope'])
+        tslope = np.tan(self.params['pyramid_slope_deg']*np.pi/180)
         dx, diam = self.GetDxAndDiam(x)
         phase_step = 360*(indref-1)*dx*tslope/lam
         if phase_step > self.params['max_pyramid_phase_step']:
@@ -97,7 +101,7 @@ class FourierOptics():
 
     def PyramidHeight2D(self, x, center, rotate, tip, tilt):
         #calculate the height of the pyramid face.  Rotate according to (rotate, tip, tilt) params
-        tan_slope = np.tan(self.params['pyramid_slope']*np.pi/180.)
+        tan_slope = np.tan(self.params['pyramid_slope_deg']*np.pi/180.)
         roof = self.params['pyramid_roofsize']/2
         nx = x.shape[0]
         [px, py] = np.meshgrid(x - center[0], x - center[1], indexing='xy')  # note coord shift
@@ -357,7 +361,7 @@ class FourierOptics():
     def ResampleField1D(self, g, x, dx_new, kind='quadratic', fill_value='extrapolate'):
         if g.shape != x.shape:
             raise Exception("ResampleField1D: input field and x must have the same shape.")
-        dx, diam = self.DxAndDiam(x)
+        dx, diam = self.GetDxAndDiam(x)
         nx = int(np.round(diam/dx_new))
         dxnew = diam/nx
         xnew = np.linspace(-diam/2 + dxnew/2, diam/2 - dxnew/2, nx)
