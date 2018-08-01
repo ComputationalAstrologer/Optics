@@ -51,9 +51,10 @@ class FourierOptics():
             dx = x[1] - x[0]
             dx_new = dx*self.params['max_pyramid_phase_step']/phase_diff
             [g, xnew] = self.ResampleField1D(g, x, dx_new)
-            ramp = 2*np.pi*q*np.tan(pslope)*np.abs(xnew - center)/lam
+            x = xnew
+            ramp = 2*np.pi*q*np.tan(pslope)*np.abs(x - center)/lam
             if no_apex:
-                ramp = 2*np.pi*q*np.tan(pslope)*(xnew - center)/lam
+                ramp = 2*np.pi*q*np.tan(pslope)*(x - center)/lam
 
         phasor = np.exp(1j*ramp)
         if not return_derivs:
