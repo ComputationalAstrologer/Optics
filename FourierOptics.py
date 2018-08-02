@@ -29,6 +29,72 @@ class FourierOptics():
         self.params = params
         return
 
+    #This treats a planar interface as a phase screen.  The light is going
+    #  in the +z direction, from medium A with index=nA, to medium B,
+    #  with index=nB.
+    #normal is a 2-component normal vector describing the orientation of
+    #  the interface [i.e., (x,z).dot(normal) = 0]
+    def ApplyPlanarPhaseScreen1D(self, g, x, normal, nA=1, nB=1.5):
+        if g.shape != x.shape:
+            raise Exception("ApplyPlanarPhaseScreen1D: input field and grid must have same sampling.")
+        if len(normal) != 2:
+            raise Exception("ApplyPlanarPhaseScreen1D: normal must have 2 components.")
+        lam = self.params['wavelength']
+        normal /= np.sum(normal*normal)
+        assert normal[1] != 0
+        if np.abs(normal[1]) > 0.999999999:  # return if the normal is in the z direction
+            return([g, x])
+        
+        dx, diam = self.GetDxAndDiam(x)
+        dz = - dx*normal[0]/normal[1]
+        dph = 360*np.abs(dz*(nA - nB)/lam) 
+        if dph > self.params['max_plane_step_deg']:
+            dxnew = dx*self.params['max_plane_step_deg']/dph
+            g, x = self.ResampleField1D(g, x, dxnew)
+
+        ph = np.zeros(x.shape)  # Since phase increases with z,
+        for k in range(len(x)):  #  if z > 0, nB > nA, the effect on phase is negative
+                z = - x[k]*normal[0]/normal[1]
+                ph[k] = 2*np.pi*(nA - nB)*z/lam
+        g = g*np.exp(1j*ph)
+        return([g, x])
+
+    #This treats a planar interface as a phase screen.  The light is going
+    #  in the +z direction, from medium A with index=nA, to medium B,
+    #  with index=nB.
+    #normal is a 3-component normal vector describing the orientation of
+    #  the interface [i.e., (x,y,z).dot(normal) = 0]
+    def ApplyPlanarPhaseScreen2D(self, g, x, normal, nA=1, nB=1.5):
+        if g.shape[0] != x.shape[0]:
+            raise Exception("ApplyPlanarPhaseScreen2D: input field and grid must have same sampling.")
+        if g.ndim != 2:
+            raise Exception("ApplyPlanarPhaseScreen2D: input field array must be 2D.")
+        if g.shape[0] != g.shape[1]:
+            raise Exception("ApplyPlanarPhaseScreen2D: input field array must be square.")
+        if len(normal) != 3:
+            raise Exception("ApplyPlanarPhaseScreen2D: normal must have 3 components.")
+        lam = self.params['wavelength']
+        normal /= np.sum(normal*normal)
+        assert normal[2] != 0
+        if np.abs(normal[2]) > 0.999999999:  # return if the normal is in the z direction
+            return([g, x])
+
+        dx, diam = self.GetDxAndDiam(x)
+        dz = dx*np.sqrt(normal[0]*normal[0] + normal[1]*normal[1])/normal[2]
+        dph = 360*np.abs(dz*(nA - nB)/lam) 
+        if dph > self.params['max_plane_step_deg']:
+            dxnew = dx*self.params['max_plane_step_deg']/dph
+            g, x = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
+
+        xs, ys = np.meshgrid(x, x, indexing='xy')
+        ph = np.zeros(xs.shape)  # Since phase increases with z,
+        for k in range(len(x)):  #  if z > 0, nB > nA, the effect on phase is negative
+            for l in range(len(x)):
+                z = - (xs[k,l]*normal[0] + ys[k,l]*normal[1])/normal[2]
+                ph[k,l] = 2*np.pi*(nA - nB)*z/lam
+        g = g*np.exp(1j*ph)
+        return([g, x])
+
     #This applies the pyramid's phase ramp, applies re-gridding if phase-step is too big
     # g - input field
     # x - input spatial grid
@@ -73,6 +139,10 @@ class FourierOptics():
     #tip (degrees) corresponds to rotating the pyramid about the apex in x-z plane
     #tilt (degress)                                                      y-z
     #   tip and tilt are relative to the pyramid axes
+    #returns:
+    # g - field (perhaps resampled) with phase screen applied
+    # x - 1D coordinate vector (consistent with resampling)
+    # ee - 3x3 matrix of pyramid axes.  Columns are (x, y, z) axes
     def ApplyPyramidPhaseRamp2D(self, g, x, center=[0,0], rotate=0, tip=0, tilt=0, return_derivs=False):
         if g.shape[0] != x.shape[0]:
             raise Exception("ApplyPyramidPhaseRamp2D: input field and grid must have same sampling.")
@@ -92,20 +162,26 @@ class FourierOptics():
             dxnew = self.params['max_pyramid_phase_step']*lam/(360*tslope)
             [g, x] = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
 
-        height = self.PyramidHeight2D(x, center, rotate, tip, tilt)
+        [height, ee] = self.PyramidHeight2D(x, center, rotate, tip, tilt)
+
         ramp = np.exp(-2j*np.pi*height*(indref - 1)/lam)
         g *= ramp
         if not return_derivs:
-            return([g, x])
+            return([g, x, ee])
         # Unfortunately, I think finite differences is the best option for these derivatives.
         #    Make sure the steps are not to small for the delta x
 
+    #tip and tilt are with respect the pyramid axes
+    #this also keeps track of the pyramid axis: ex, ey, ez.  This makes it easier to remove
+    #  the non-physical angular offset introduced by (tip, tilt) != 0
+    #Returns height profile and coordinate axes of pyramid
     def PyramidHeight2D(self, x, center, rotate, tip, tilt):
         #calculate the height of the pyramid face.  Rotate according to (rotate, tip, tilt) params
         tan_slope = np.tan(self.params['pyramid_slope_deg']*np.pi/180.)
         roof = self.params['pyramid_roofsize']/2
         nx = x.shape[0]
-        [px, py] = np.meshgrid(x - center[0], x - center[1], indexing='xy')  # note coord shift
+        #These transformations put the optical system coords into pyramid coords
+        [px, py] = np.meshgrid(x - center[0], x - center[1], indexing='xy')
         xs = np.zeros(px.shape)
         ys = np.zeros(px.shape)
         zs = np.zeros(px.shape)  # face height (taken to be >= 0)
@@ -129,25 +205,50 @@ class FourierOptics():
                 else:  # -y direction
                     if np.abs(sy) >= roof:
                         zs[k,l] = (np.abs(sy) - roof)*tan_slope
-        # to apply tip, rotate about y-axis.  for tilt, rotate about x-axis
-        if tip != 0:
-            t = tip*np.pi/180 
-            for k in range(nx):
-                for l in range(nx):
-                    xs[k,l], zs[k,l] = xs[k,l]*np.cos(t) + zs[k,l]*np.sin(t), xs[k,l]*np.sin(-t) + zs[k,l]*np.cos(t)
+        if tip != 0:  # to apply tip, rotate about y-axis.  for tilt, rotate about x-axis
+            rymat = self.RotationMatrix( tip, 'y')
+        else:
+            rymat = np.eye(3)
         if tilt != 0:
-            t = tilt*np.pi/180
+            rxmat = self.RotationMatrix( tilt, 'x')
+        else:
+            rxmat = np.eye(3)
+        if tip !=0 or tilt != 0:
+            rxymat = rxmat.dot(rymat)
+            v = np.zeros(3); u = np.zeros(3)
             for k in range(nx):
                 for l in range(nx):
-                    ys[k,l], zs[k,l] = ys[k,l]*np.cos(t) + zs[k,l]*np.sin(t), ys[k,l]*np.sin(-t) + zs[k,l]*np.cos(t)
-        return(zs)
+                    v[0] = xs[k,l]; v[1] = ys[k,l]; v[2] = zs[k,l]
+                    u = rxymat.dot(v)
+                    xs[k,l] = u[0]; ys[k,l] = u[1]; zs[k,l] = u[2]
+        else:
+            rxymat = np.eye(3)
 
+        mat = self.RotationMatrix(-rotate*180/np.pi ,'z').dot(np.linalg.inv(rxymat))
+        ee = mat.dot(np.eye(3))  # pyramid axes are columns of matrix ee
+
+        return([zs, ee])
+
+    #3D rotation matrix for positive (?) rotations about 'axis'
+    #t is the rotation angle in degrees.
+    #axis must be 'x', 'y', or 'z'
+    def RotationMatrix(self, t, axis='x'):
+        assert axis == 'x' or axis == 'y' or axis == 'z'
+        s = t*np.pi/180
+        if axis == 'x':
+            mat = np.array([[1, 0, 0], [0, np.cos(s), np.sin(s)],[0, np.sin(-s), np.cos(s)]])
+        elif axis == 'y':
+            mat = np.array([[np.cos(s), 0, np.sin(s)],[0, 1, 0],[np.sin(-s), 0, np.cos(s)]])
+        else:  # 'z'
+            mat = np.array([[np.cos(s), np.sin(s) , 0], [np.sin(-s), np.cos(s),0], [0, 0, 1]])
+        return(mat)
 
     #1D Fresenel prop using convolution in the spatial domain
     # g - vector of complex-valued field in the inital plane
     # x - vector of coordinates in initial plane, corresponding to bin center locaitons
     # diam_out - diameter of region to be calculated in output plane
     # z - propagation distance
+    # index_of_refaction - isotropic index of refraction of medium
     # set_dx = [True | False | dx (microns)]
     #   True  - forces full sampling of chirp according to self.params['max_chirp_step_deg']
     #           Note: this can lead to unacceptably large arrays.
@@ -157,10 +258,11 @@ class FourierOptics():
     #...dx - sets the resolution to dx (units microns).  Note: the output dx will differ 
     #         slightly from this value
     # return_derivs - True to return deriv. of output field WRT z
-    def ConvFresnel1D(self, g, x, diam_out, z, set_dx=True, return_derivs=False):
+    def ConvFresnel1D(self, g, x, diam_out, z, index_of_refraction=1,
+                      set_dx=True, return_derivs=False):
         if g.shape != x.shape:
             raise Exception("Input field and grid must have same dimensions.")
-        lam = self.params['wavelength']
+        lam = self.params['wavelength']/index_of_refraction
         dx, diam = self.GetDxAndDiam(x)
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
@@ -214,6 +316,7 @@ class FourierOptics():
     #    Note that the field is set to 0 outside of disk defined by r = diam_out/2.  This
     #      is because the chirp sampling criteria could be violated outside of this disk.
     # z - propagation distance
+    # index_of_refaction - isotropic index of refraction of medium
     # set_dx = [True | False | dx (microns)]
     #   True  - forces full sampling of chirp according to self.params['max_chirp_step_deg']
     #           Note: this can lead to unacceptably large arrays.
@@ -223,7 +326,8 @@ class FourierOptics():
     #...dx - sets the resolution to dx (units microns).  Note: the output dx will differ 
     #         slightly from this value
     # return_derivs - True to return deriv. of output field WRT z
-    def ConvFresnel2D(self, g, x, diam_out, z, set_dx=True, return_derivs=False):
+    def ConvFresnel2D(self, g, x, diam_out, z, index_of_refraction=1,
+                      set_dx=True, return_derivs=False):
         if g.shape[0] != x.shape[0]:
             raise Exception("ConvFresnel2D: input field and grid must have same sampling.")
         if g.ndim != 2:
@@ -231,7 +335,7 @@ class FourierOptics():
         if g.shape[0] != g.shape[1]:
             raise Exception("ConvFresnel2D: input field array must be square.")
 
-        lam = self.params['wavelength']
+        lam = self.params['wavelength']/index_of_refraction
         dx, diam = self.GetDxAndDiam(x)
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)

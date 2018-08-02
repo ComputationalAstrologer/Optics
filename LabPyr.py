@@ -24,13 +24,14 @@ pyrparams = dict()
 pyrparams['beam_diameter'] = 1.e3 # input beam diameter (microns)
 pyrparams['wavelength'] = 0.6328 # wavelength (microns)
 pyrparams['indref'] = 1.5 # pyramid index of refraction
-pyrparams['pyramid_slope_deg'] = 4.5 # slope of pyramid faces relative to horizontal (degrees)
+pyrparams['pyramid_slope_deg'] = 3# 10.5  # slope of pyramid faces relative to horizontal (degrees)
 pyrparams['pyramid_roofsize'] = 16 # length of one side of square pyramid roof (microns)
+pyrparams['pyramid_height'] = 1.e4 # (microns)  height of pyramid
 pyrparams['n_starting_points'] = 150  # number of resolution elements in initital beam diameter
 pyrparams['D_e_2_l1'] = 200.e3 # nominal distance from entrance pupil to lens1 (microns)
 pyrparams['f1'] = 100.e3 # focal length of lens #1 (focuses light on pyramid tip)
-pyrparams['lens1_fill_diameter'] = 2.e3  #  computational beam width at lens#1.  This matters!
-pyrparams['beam_diameter_at_pyramid'] = 400  # focal spot size at pyramid width
+pyrparams['lens1_fill_diameter'] = 3.e3  #  computational beam width at lens#1.  This matters!
+pyrparams['beam_diameter_at_pyramid'] = 1.e3  # focal spot size at pyramid width
 pyrparams['D_l1_2_pyr'] = 100.e3 # distance from lens1 to pyramid tip
 pyrparams['D_l1_2_detector'] = 200.e3  # distance from lens to detector in 4f system
 pyrparams['apex_diam'] = 8 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
@@ -41,6 +42,7 @@ pyrparams['D_l2_2_detector'] = 10.e3 # distrance from lens2 to detector
 pyrparams['detector_width'] = 6.e3 # width of detector
 pyrparams['max_chirp_step_deg'] = 90  # maximum allowed value (degrees) in chirp step for Fresnel prop
 pyrparams['max_lens_step_deg'] = 20 # maximum step size allowed for lens phase screen
+pyrparams['max_plane_step_deg'] = 20  # (degrees) maximum phase step allowed for planar phase screen
 pyrparams['max_pyramid_phase_step'] = 20  # maximum step (degrees) allowed for pyramid phase ramp
 pyrparams['interp_style'] = 'cubic'  # type of 2d interpolator
 
@@ -69,21 +71,37 @@ class OpticalModels():
 
         return
 
-    def PropBeamNoFocus(self):
+    def PropBeamNoFocus(self, PhaseScreenTest=False):
         FO = FourierOptics.FourierOptics(pyrparams)
         diam = self.params['beam_diameter']
         diam1 = 1.e3 + diam
-        z = self.params['D_e_2_l1'] + self.params['f1']
-        field1D, xout = FO.ConvFresnel1D(self.field_Start1D, self.x_Start, diam1, z, set_dx=True, return_derivs=False)
+        z = self.params['D_e_2_l1'] + self.params['D_l1_2_detector']
+        x = 1.*self.x_Start
+        field1D = 1.*self.field_Start1D
+
+        if PhaseScreenTest:
+            diam1 += 1.5e3
+            aa = 1.e3/z
+            norm = np.array([aa, np.sqrt(1 - aa*aa)])
+            field1D, xout = FO.ApplyPlanarPhaseScreen1D(field1D, x, norm, nA=1, nB=2)
+
+        field1D, xout = FO.ConvFresnel1D(field1D, x, diam1, z, set_dx=True, return_derivs=False)
 
         plt.figure()
         intensity = np.real(field1D*np.conj(field1D))
         plt.plot(xout/1.e3, intensity/np.max(intensity), 'x-')
-        plt.title('3 mm: unfocused beam at detector (full res)')
+        plt.title('unfocused beam at detector (full res)')
         plt.xlabel('x (mm)')
         plt.ylabel('intensity')
 
-        field2D, xout = FO.ConvFresnel2D(self.field_Start2D, self.x_Start, diam1, z, set_dx=True, return_derivs=False)
+        x = 1.*self.x_Start
+        field2D = 1.*self.field_Start2D
+        if PhaseScreenTest:
+            aa = 1.e3/z
+            norm = np.array([0, aa, np.sqrt(1 - aa*aa)])  # vertical displacement
+            field2D, xout = FO.ApplyPlanarPhaseScreen2D(field2D, x, norm, nA=1, nB=2)
+
+        field2D, xout = FO.ConvFresnel2D(field2D, xout, diam1, z, set_dx=True, return_derivs=False)
         br2D = sq(field2D)
         br2D /= np.max(br2D)
 
@@ -213,37 +231,42 @@ class OpticalModels():
 
     #This simulates an f4 optical system, in which (image distance)=(object distance)=2f,
     #   except now there is an pyramid placed at a distance f from the lens
-    def PropF4Pyramid(self, pyr_dist_error=0):
+    #center, rotate, tip, tilt are passed to FO.ApplyPyramidPhaseRamp2D
+    def PropF4Pyramid(self, fig_list=None, pyr_dist_error=0, center=[0,0], rotate=0, tip=0, tilt=0):
+        if len(center) != 2:
+            raise Exception("PropF4Pyramid: center parameter must have len=2.")
         FO = FourierOptics.FourierOptics(pyrparams)
         obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
         focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid tip)
         d2pyr = self.params['D_l1_2_pyr'] + pyr_dist_error # distance from lens1 to pyramid tip
         d_pyr_det = self.params['D_l1_2_detector'] - d2pyr
         diam0 = self.params['lens1_fill_diameter']
-        detector_diam = 10.e3
-        
+        # angle between beams, see Eq. 21 in Sec. 4.1 of Depierraz' thesis
+        beta =  2*(self.params['indref'] - 1)*self.params['pyramid_slope_deg']*np.pi/180
+        detector_diam = 2*focal_length*np.tan(beta/2) + self.params['beam_diameter'] + 550
 
         # propagate field to lens
         z = obd
         field1d, x1d = FO.ConvFresnel1D(self.field_Start1D, self.x_Start, diam0, z, set_dx=9.9, return_derivs=False)
         print("at lens: delta x = " + str(x1d[1] - x1d[0]) + " microns, len(x) = " + str(len(x1d)))
         field2d, x2d = FO.ConvFresnel2D(self.field_Start2D, self.x_Start, diam0, z, set_dx=9.9, return_derivs=False)
-        br1d = sq(field1d); br1d /= np.max(br1d)
-        br2d = sq(field2d); br2d /= np.max(br2d)
+        br1d = np.abs(field1d); br1d /= np.max(br1d)
+        br2d = np.abs(field2d); br2d /= np.max(br2d)
 
-        dx = x1d[1] - x1d[0]
-        plt.figure()
-        plt.plot(x1d, br1d,'x-')
-        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
-        plt.xlabel('x (microns)')
-        plt.ylabel('intensity')
-        plt.figure()
-        dx = x2d[1] - x2d[0]
-        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
-        plt.colorbar();
-        plt.title('intensity at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
-        plt.xlabel('x (microns)')
-        plt.ylabel('y (microns)')
+        if 'lens' in fig_list:
+            dx = x1d[1] - x1d[0]
+            plt.figure()
+            plt.plot(x1d, br1d,'x-')
+            plt.title('|field| at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (microns)')
+            plt.ylabel('intensity')
+            plt.figure()
+            dx = x2d[1] - x2d[0]
+            plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+            plt.colorbar();
+            plt.title('|field| at lens1, z = ' + str(z/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (microns)')
+            plt.ylabel('y (microns)')
 
         #apply phase screen due to lens
         lens_center = 0
@@ -258,46 +281,86 @@ class OpticalModels():
         field1d, x1d = FO.ConvFresnel1D(field1d, x1d, diam_pyr, z, set_dx=0.885, return_derivs=False)
         print("at pyramid: delta x = " + str(x1d[1] - x1d[0]) + " microns, len(x) = " + str(len(x1d)))
         field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=0.885, return_derivs=False)
-        br1d = sq(field1d); br1d /= np.max(br1d)
-        br2d = sq(field2d); br2d /= np.max(br2d)
+        br1d = np.abs(field1d); br1d /= np.max(br1d)
+        br2d = np.abs(field2d); br2d /= np.max(br2d)
 
-        dx = x1d[1] - x1d[0]
-        plt.figure()
-        plt.plot(x1d, br1d,'x-')
-        plt.title('intensity at pyramid, z = ' + str(d2pyr/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
-        plt.xlabel('x (microns)')
-        plt.ylabel('intensity')
-        plt.figure()
-        dx = x2d[1] - x2d[0]
-        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
-        plt.colorbar();
-        plt.title('intensity at pyramid, z = ' + str(d2pyr/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
-        plt.xlabel('x (microns)')
-        plt.ylabel('y (microns)')
+        if 'pyr_apex' in fig_list:
+            dx = x1d[1] - x1d[0]
+            plt.figure()
+            plt.plot(x1d, br1d,'x-')
+            plt.title('|field| at pyramid apex, z = ' + str(d2pyr/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (microns)')
+            plt.ylabel('intensity')
+            plt.figure()
+            dx = x2d[1] - x2d[0]
+            plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+            plt.colorbar();
+            plt.title('|field| at pyramid apex, z = ' + str(d2pyr/1.e4) +  ' cm, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (microns)')
+            plt.ylabel('y (microns)')
 
+        #apply pyramid phase screen to simulate entering pyramid glass
         field1d, x1d = FO.ApplyPyramidPhaseRamp1D(field1d, x1d, center=0, no_apex=False, return_derivs=False)
-        print("after pyramid: delta x = " + str(x1d[1] - x1d[0]) + " microns, len(x) = " + str(len(x1d)))
-        field2d, x2d = FO.ApplyPyramidPhaseRamp2D(field2d, x2d, center=[0,0], rotate=0, tip=0, tilt=0, return_derivs=False)
+        print("after pyramid apex: delta x1d = " + str(x1d[1] - x1d[0]) + " microns, len(x1d) = " + str(len(x1d)))
+        #the columns of pyr_ax are unit vectors of the pyramid axes
+        field2d, x2d, pyr_ax = FO.ApplyPyramidPhaseRamp2D(field2d, x2d,
+                           center=center, rotate=rotate, tip=tip, tilt=tilt, return_derivs=False)
+        normal = pyr_ax[:,2]  # normal to bottom face of pyramid glass
+        print("after pyramid apex: delta x2d = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
 
-        z = d_pyr_det
+        #propagate within pyramid glass (!)
+        nr = self.params['indref']
+        z = self.params['pyramid_height']
+        beta = 2*self.params['pyramid_slope_deg']*(nr - 1)*np.pi/180
+        diam_pyr = 1.e3  #self.params['beam_diameter'] + z*beta
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, diam_pyr, z, index_of_refraction=nr,
+                                        set_dx=True, return_derivs=False)
+        print("after pyramid exit: delta x1d = " + str(x1d[1] - x1d[0]) + " microns, len(x1d) = " + str(len(x1d)))
+        field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, index_of_refraction=nr,
+                                        set_dx=True, return_derivs=False)
+        print("after pyramid exit: delta x2d = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
+
+
+        if 'pyr_exit' in fig_list:
+            dx = x1d[1] - x1d[0]
+            br1d = np.abs(field1d); br1d /= np.max(br1d)
+            plt.figure()
+            plt.plot(x1d/1.e3, br1d,'x-')
+            plt.title('|field| at pyramid exit, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (mm)')
+            plt.ylabel('intensity')
+            plt.figure()
+            br2d = np.abs(field2d); br2d /= np.max(br2d)
+            plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+            plt.colorbar();
+            plt.title('|field| at pyramid exit, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (microns)')
+            plt.ylabel('y (microns)')
+
+        
+        #apply phase screen to simulate exit from pyramid bottom
+        field2d, x2d = FO.ApplyPlanarPhaseScreen2D(field2d, x2d, normal, nA=nr, nB=1)
+
+        z = d_pyr_det - self.params['pyramid_height']
         field1d, x1d = FO.ConvFresnel1D(field1d, x1d, detector_diam, z, set_dx=True, return_derivs=False)
         print("at detector: delta x = " + str(x1d[1] - x1d[0]) + " microns, len(x) = " + str(len(x1d)))
         field2d, x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=False)
         br1d = sq(field1d); br1d /= np.max(br1d)
         br2d = sq(field2d); br2d /= np.max(br2d)
 
-        dx = x1d[1] - x1d[0]
-        plt.figure()
-        plt.plot(x1d/1.e3, br1d,'x-')
-        plt.title('intensity at detector, $\Delta x$ = ' + str(dx))
-        plt.xlabel('x (mm)')
-        plt.ylabel('intensity')
-        plt.figure()
-        plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
-        plt.colorbar();
-        plt.title('intensity at detector, $\Delta x$ = ' + str(dx))
-        plt.xlabel('x (microns)')
-        plt.ylabel('y (microns)')
+        if 'detector' in fig_list:
+            dx = x1d[1] - x1d[0]
+            plt.figure()
+            plt.plot(x1d/1.e3, br1d,'x-')
+            plt.title('intensity at detector, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (mm)')
+            plt.ylabel('intensity')
+            plt.figure()
+            plt.imshow(br2d, extent=[x2d[0], x2d[-1], x2d[0], x2d[-1]])
+            plt.colorbar();
+            plt.title('intensity at detector, $\Delta x$ = ' + str(dx))
+            plt.xlabel('x (microns)')
+            plt.ylabel('y (microns)')
 
         return
 
