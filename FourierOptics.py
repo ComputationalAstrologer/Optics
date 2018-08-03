@@ -29,6 +29,196 @@ class FourierOptics():
         self.params = params
         return
 
+    #1D Fresenel prop using convolution in the spatial domain
+    # g - vector of complex-valued field in the inital plane
+    # x - vector of coordinates in initial plane, corresponding to bin center locaitons
+    # diam_out - diameter of region to be calculated in output plane
+    # z - propagation distance
+    # index_of_refaction - isotropic index of refraction of medium
+    # set_dx = [True | False | dx (microns)]
+    #   True  - forces full sampling of chirp according to self.params['max_chirp_step_deg']
+    #           Note: this can lead to unacceptably large arrays.
+    #   False - zeroes the kernel beyond where self.params['max_chirp_step_deg'] 
+    #            exceedes the dx given in the x input array.  Note: the output dx will differ
+    #            slightly from dx in the x input array.
+    #...dx - sets the resolution to dx (units microns).  Note: the output dx will differ 
+    #         slightly from this value
+    # return_derivs - True to return deriv. of output field WRT z
+    def ConvFresnel1D(self, g, x, diam_out, z, index_of_refraction=1,
+                      set_dx=True, return_derivs=False):
+        if g.shape != x.shape:
+            raise Exception("Input field and grid must have same dimensions.")
+        lam = self.params['wavelength']/index_of_refraction
+        dx, diam = self.GetDxAndDiam(x)
+        dPhiTol_deg = self.params['max_chirp_step_deg']
+        dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
+        if set_dx == False:
+            dx_new = dx
+        elif set_dx == True:  # use chirp sampling criterion
+            dx_new = dx_chirp
+        else:  # take dx_new to be value of set_dx
+            if str(type(set_dx)) != "<class 'float'>":
+                raise Exception("ConvFresnel1D: set_dx must be a bool or a float.")
+            if set_dx <= 0:
+                raise Exception("ConvFresnel1D: numerical value of set_dx must be > 0.")
+            dx_new = set_dx
+
+        if dx != dx_new:  # interpolate g onto a grid with spacing of (approx) dx_new
+            [g, x] = self.ResampleField1D(g, x, dx_new)
+            dx = x[1] - x[0]
+
+        # make the kernel grid (s) match x as closely as possible
+        ns = int(np.round(diam + diam_out)/dx)  # number of points on extended kernel
+        s = np.linspace(-diam/2 - diam_out/2 + dx/2, diam/2 + diam_out/2 - dx/2, ns) # spatial grid of extended kernel
+        indices_out = np.where(np.abs(s) < diam_out/2)[0] # get the part of s within the output grid
+
+        #Calculate Fresnel convoltion kernel, (Goodman 4-16)
+        #  Note: the factor p = 1/(lam*z) is applied later
+        #  Also note: the factor -1j*np.exp(2j*np.pi*z/lam) causes unwanted oscillations with z
+        kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel
+        if dx > dx_chirp:  # Where does |s| exceed the max step for this dx?
+            s_max = lam*z*self.params['max_chirp_step_deg']/(360*dx)
+            null_ind = np.where(np.abs(s) > s_max)[0]
+            kern[null_ind] = 0
+        h = conv(kern, g, mode='same', method='fft')  # h is on the s spatial grid
+
+        p = 1/(lam*z)
+        if not return_derivs:
+            return([p*h[indices_out], s[indices_out]])
+        #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
+        dpdz = -1/(lam*z*z)
+        dkerndz = -1j*np.pi*s*s*kern/(lam*z*z)
+        dhdz = conv(dkerndz, g, mode='same', method='fft')
+        s = s[indices_out]
+        h = h[indices_out]
+        dhdz = dhdz[indices_out]
+        return([p*h, dpdz*h + p*dhdz, s])
+
+    #2D Fresenel prop using convolution in the spatial domain
+    # g - matrix of complex-valued field in the inital plane
+    # x - vector of 1D coordinates in initial plane, corresponding to bin center locaitons
+    #        it is assumed that the x and y directions have the same sampling.
+    # diam_out - diameter of region to be calculated in output plane
+    #    Note that the field is set to 0 outside of disk defined by r = diam_out/2.  This
+    #      is because the chirp sampling criteria could be violated outside of this disk.
+    # z - propagation distance
+    # index_of_refaction - isotropic index of refraction of medium
+    # set_dx = [True | False | dx (microns)]
+    #   True  - forces full sampling of chirp according to self.params['max_chirp_step_deg']
+    #           Note: this can lead to unacceptably large arrays.
+    #   False - zeroes the kernel beyond where self.params['max_chirp_step_deg'] 
+    #            exceedes the dx given in the x input array.  Note: the output dx will differ
+    #            slightly from dx in the x input array.
+    #...dx - sets the resolution to dx (units microns).  Note: the output dx will differ 
+    #         slightly from this value
+    # return_derivs - True to return deriv. of output field WRT z
+    def ConvFresnel2D(self, g, x, diam_out, z, index_of_refraction=1,
+                      set_dx=True, return_derivs=False):
+        if g.shape[0] != x.shape[0]:
+            raise Exception("ConvFresnel2D: input field and grid must have same sampling.")
+        if g.ndim != 2:
+            raise Exception("ConvFresnel2D: input field array must be 2D.")
+        if g.shape[0] != g.shape[1]:
+            raise Exception("ConvFresnel2D: input field array must be square.")
+
+        lam = self.params['wavelength']/index_of_refraction
+        dx, diam = self.GetDxAndDiam(x)
+        dPhiTol_deg = self.params['max_chirp_step_deg']
+        dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
+        if set_dx == False:
+            dx_new = dx
+        elif set_dx == True:  # use chirp sampling criterion
+            dx_new = dx_chirp
+        else:  # take dx_new to be value of set_dx
+            if str(type(set_dx)) != "<class 'float'>":
+                raise Exception("ConvFresnel2D: set_dx must be a bool or a float.")
+            if set_dx <= 0:
+                raise Exception("ConvFresnel2D: numerical value of set_dx must be > 0.")
+            dx_new = set_dx
+
+        if dx != dx_new:  # interpolate g onto a grid with spacing of approx dx_new
+            [g, x] = self.ResampleField2D(g, x, dx_new, kind=self.params['interp_style'])
+            dx = x[1] - x[0]
+
+        # make the kernel grid (s) match x as closely as possible
+        ns = int(np.round(diam + diam_out)/dx)  # number of points on extended kernel
+        s = np.linspace(-diam/2 - diam_out/2 + dx/2, diam/2 + diam_out/2 - dx/2, ns) # spatial grid of extended kernel
+        ind = np.where(np.abs(s) < diam_out/2)[0] # get the part of s within the 1D output grid
+        [sx, sy] = np.meshgrid(s, s, indexing='xy')
+        i_out = np.where(np.sqrt(sx*sx + sy*sy) > diam_out/2)
+
+        #Calculate Fresnel convoltion kernel, (Goodman 4-16)
+        #  Note: the factor p = 1/(lam*z) is applied later
+        #  Also note: the factor -1j*np.exp(2j*np.pi*z/lam) causes unwanted oscillations with z
+        kern = np.exp(1j*np.pi*(sx*sx + sy*sy)/(lam*z))  # Fresnel kernel
+        if dx > dx_chirp:  # Where does |s| exceed the max step for this dx?
+            s_max = lam*z*self.params['max_chirp_step_deg']/(360*dx)
+            null_ind = np.where(np.sqrt(sx*sx + sy*sy) > s_max)
+            kern[null_ind[0], null_ind[1]] = 0
+        h = conv(kern, g, mode='same', method='fft')  # h is on the s spatial grid
+        h[i_out[0], i_out[1]] = 0.  # zero the field outside the desired region
+        h = h[ind[0]:ind[-1] + 1, ind[0]:ind[-1] + 1]
+        p = 1/(lam*z)
+        if not return_derivs:
+            return([p*h, s[ind]])
+        #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
+        dpdz = -1/(lam*z*z)
+        dkerndz = -1j*np.pi*(sx*sx + sy*sy)*kern/(lam*z*z)
+        dhdz = conv(dkerndz, g, mode='same', method='fft')
+        dhdz[i_out[0], i_out[1]] = 0.
+        dhdz = dhdz[ind[0]:ind[-1] + 1, ind[0]:ind[-1] + 1]
+        return([p*h, dpdz*h + p*dhdz, s[ind]])
+
+    #Apply thin lens phase transformation.
+    # g - electric field impinging on lens
+    # x - spatial coordinate
+    # center - center of lens relative to zero of x
+    # fl - lens focal length (same units as x and wavelength)
+    def ApplyThinLens1D(self, g, x, center, fl, return_derivs=False):
+        if g.shape != x.shape:
+            raise Exception("Input field and spatial grid must have same dimensions.")
+        [dx, diam] = self.GetDxAndDiam(x)
+        lam = self.params['wavelength']
+        max_step = self.params['max_lens_step_deg']*np.pi/180
+        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.abs(center)))
+        if dx > dx_tol:  # interpolate onto higher resolution grid
+            [g, xnew] = self.ResampleField1D(g, x, dx_tol)
+        else:
+            xnew = x
+        h = g*np.exp(-1j*np.pi*(xnew - center)*(xnew - center)/(fl*lam))
+        if not return_derivs:
+            return([h, xnew])
+        dhdc = 2j*np.pi*(xnew - center)*h/(lam*fl)
+        return([h, dhdc, xnew])
+
+    # similar to 1D version, except center must be of length 2
+    def ApplyThinLens2D(self, g, x, center, fl, return_derivs=False):
+        if g.shape[0] != x.shape[0]:
+            raise Exception("ApplyThinLens2D: input field and grid must have same sampling.")
+        if g.ndim != 2:
+            raise Exception("ApplyThinLens2D: input field array must be 2D.")
+        if g.shape[0] != g.shape[1]:
+            raise Exception("ApplyThinLens2D: input field array must be square.")
+        if len(center) != 2:
+            raise Exception("ApplyThinLens2D: center parameter must have len=2.")
+
+        [dx, diam] = self.GetDxAndDiam(x)
+        lam = self.params['wavelength']
+        max_step = self.params['max_lens_step_deg']*np.pi/180
+        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.sqrt(center[0]**2 + center[1]**2)))
+        if dx > dx_tol:  # interpolate onto higher resolution grid
+            [g, x] = self.ResampleField2D(g, x, dx_tol, kind=self.params['interp_style'])
+
+        [sx, sy] = np.meshgrid(x, x, indexing='xy')
+        sx -= center[0]
+        sy -= center[1]
+        h = g*np.exp(-1j*np.pi*(sx*sx + sy*sy)/(fl*lam))
+        if not return_derivs:
+            return([h, x])
+        dhdc0 = 2j*np.pi*sx*h/(lam*fl)
+        dhdc1 = 2j*np.pi*sy*h/(lam*fl)
+        return([h, [dhdc0, dhdc1], x])
+
     #This treats a planar interface as a phase screen.  The light is going
     #  in the +z direction, from medium A with index=nA, to medium B,
     #  with index=nB.
@@ -229,209 +419,95 @@ class FourierOptics():
 
         return([zs, ee])
 
-    #3D rotation matrix for positive (?) rotations about 'axis'
-    #t is the rotation angle in degrees.
-    #axis must be 'x', 'y', or 'z'
-    def RotationMatrix(self, t, axis='x'):
-        assert axis == 'x' or axis == 'y' or axis == 'z'
-        s = t*np.pi/180
-        if axis == 'x':
-            mat = np.array([[1, 0, 0], [0, np.cos(s), np.sin(s)],[0, np.sin(-s), np.cos(s)]])
-        elif axis == 'y':
-            mat = np.array([[np.cos(s), 0, np.sin(s)],[0, 1, 0],[np.sin(-s), 0, np.cos(s)]])
-        else:  # 'z'
-            mat = np.array([[np.cos(s), np.sin(s) , 0], [np.sin(-s), np.cos(s),0], [0, 0, 1]])
-        return(mat)
-
-    #1D Fresenel prop using convolution in the spatial domain
-    # g - vector of complex-valued field in the inital plane
-    # x - vector of coordinates in initial plane, corresponding to bin center locaitons
-    # diam_out - diameter of region to be calculated in output plane
-    # z - propagation distance
-    # index_of_refaction - isotropic index of refraction of medium
-    # set_dx = [True | False | dx (microns)]
-    #   True  - forces full sampling of chirp according to self.params['max_chirp_step_deg']
-    #           Note: this can lead to unacceptably large arrays.
-    #   False - zeroes the kernel beyond where self.params['max_chirp_step_deg'] 
-    #            exceedes the dx given in the x input array.  Note: the output dx will differ
-    #            slightly from dx in the x input array.
-    #...dx - sets the resolution to dx (units microns).  Note: the output dx will differ 
-    #         slightly from this value
-    # return_derivs - True to return deriv. of output field WRT z
-    def ConvFresnel1D(self, g, x, diam_out, z, index_of_refraction=1,
-                      set_dx=True, return_derivs=False):
+    def ApplySnellAtPlane1D(self, g, x, normal, nA=1, nB=1.5):
         if g.shape != x.shape:
-            raise Exception("Input field and grid must have same dimensions.")
-        lam = self.params['wavelength']/index_of_refraction
+            raise Exception("ApplySnellAtPlane1D: input field and grid must have same sampling.")
+        if len(normal) != 2:
+            raise Exception("ApplySnellAtPlane1D: normal must have 2 components.")
+        lam = self.params['wavelength']
+        normal /= np.sum(normal*normal)
+        normal = np.array(normal)
+        assert normal[1] != 0
+        normal *= np.sign(normal[1])  # make sure normal has a +z compontent
+
+        [alpha, gamma] = self.GetDirectionCosines1D(g, x, index_of_refraction=nA)
+        #tA and tB are the angles in Snell's law, i.e. w.r.t. the normal vector
+        sintA = np.zeros(x.shape)  # sin(theta) in starting medium (A)
+        for k in range(len(x)):
+            sintA = np.abs(np.cross([normal, np.array([alpha[k], gamma[k]])]))
+        sintB = nA*sintA/nA
+        
+
         dx, diam = self.GetDxAndDiam(x)
-        dPhiTol_deg = self.params['max_chirp_step_deg']
-        dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
-        if set_dx == False:
-            dx_new = dx
-        elif set_dx == True:  # use chirp sampling criterion
-            dx_new = dx_chirp
-        else:  # take dx_new to be value of set_dx
-            if str(type(set_dx)) != "<class 'float'>":
-                raise Exception("ConvFresnel1D: set_dx must be a bool or a float.")
-            if set_dx <= 0:
-                raise Exception("ConvFresnel1D: numerical value of set_dx must be > 0.")
-            dx_new = set_dx
+        dz = - dx*normal[0]/normal[1]
+        dph = 360*np.abs(dz*(nA - nB)/lam) 
+        if dph > self.params['max_plane_step_deg']:
+            dxnew = dx*self.params['max_plane_step_deg']/dph
+            g, x = self.ResampleField1D(g, x, dxnew)
 
-        if dx != dx_new:  # interpolate g onto a grid with spacing of (approx) dx_new
-            [g, x] = self.ResampleField1D(g, x, dx_new)
-            dx = x[1] - x[0]
+        ph = np.zeros(x.shape)  # Since phase increases with z,
+        for k in range(len(x)):  #  if z > 0, nB > nA, the effect on phase is negative
+                z = - x[k]*normal[0]/normal[1]
+                ph[k] = 2*np.pi*(nA - nB)*z/lam
+        g = g*np.exp(1j*ph)
+        return([g, x])
 
-        # make the kernel grid (s) match x as closely as possible
-        ns = int(np.round(diam + diam_out)/dx)  # number of points on extended kernel
-        s = np.linspace(-diam/2 - diam_out/2 + dx/2, diam/2 + diam_out/2 - dx/2, ns) # spatial grid of extended kernel
-        indices_out = np.where(np.abs(s) < diam_out/2)[0] # get the part of s within the output grid
-
-        #Calculate Fresnel convoltion kernel, (Goodman 4-16)
-        #  Note: the factor p = 1/(lam*z) is applied later
-        #  Also note: the factor -1j*np.exp(2j*np.pi*z/lam) causes unwanted oscillations with z
-        kern = np.exp(1j*np.pi*s*s/(lam*z))  # Fresnel kernel
-        if dx > dx_chirp:  # Where does |s| exceed the max step for this dx?
-            s_max = lam*z*self.params['max_chirp_step_deg']/(360*dx)
-            null_ind = np.where(np.abs(s) > s_max)[0]
-            kern[null_ind] = 0
-        h = conv(kern, g, mode='same', method='fft')  # h is on the s spatial grid
-
-        p = 1/(lam*z)
-        if not return_derivs:
-            return([p*h[indices_out], s[indices_out]])
-        #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
-        dpdz = -1/(lam*z*z)
-        dkerndz = -1j*np.pi*s*s*kern/(lam*z*z)
-        dhdz = conv(dkerndz, g, mode='same', method='fft')
-        s = s[indices_out]
-        h = h[indices_out]
-        dhdz = dhdz[indices_out]
-        return([p*h, dpdz*h + p*dhdz, s])
-
-    #2D Fresenel prop using convolution in the spatial domain
-    # g - matrix of complex-valued field in the inital plane
-    # x - vector of 1D coordinates in initial plane, corresponding to bin center locaitons
-    #        it is assumed that the x and y directions have the same sampling.
-    # diam_out - diameter of region to be calculated in output plane
-    #    Note that the field is set to 0 outside of disk defined by r = diam_out/2.  This
-    #      is because the chirp sampling criteria could be violated outside of this disk.
-    # z - propagation distance
-    # index_of_refaction - isotropic index of refraction of medium
-    # set_dx = [True | False | dx (microns)]
-    #   True  - forces full sampling of chirp according to self.params['max_chirp_step_deg']
-    #           Note: this can lead to unacceptably large arrays.
-    #   False - zeroes the kernel beyond where self.params['max_chirp_step_deg'] 
-    #            exceedes the dx given in the x input array.  Note: the output dx will differ
-    #            slightly from dx in the x input array.
-    #...dx - sets the resolution to dx (units microns).  Note: the output dx will differ 
-    #         slightly from this value
-    # return_derivs - True to return deriv. of output field WRT z
-    def ConvFresnel2D(self, g, x, diam_out, z, index_of_refraction=1,
-                      set_dx=True, return_derivs=False):
-        if g.shape[0] != x.shape[0]:
-            raise Exception("ConvFresnel2D: input field and grid must have same sampling.")
-        if g.ndim != 2:
-            raise Exception("ConvFresnel2D: input field array must be 2D.")
-        if g.shape[0] != g.shape[1]:
-            raise Exception("ConvFresnel2D: input field array must be square.")
-
-        lam = self.params['wavelength']/index_of_refraction
-        dx, diam = self.GetDxAndDiam(x)
-        dPhiTol_deg = self.params['max_chirp_step_deg']
-        dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
-        if set_dx == False:
-            dx_new = dx
-        elif set_dx == True:  # use chirp sampling criterion
-            dx_new = dx_chirp
-        else:  # take dx_new to be value of set_dx
-            if str(type(set_dx)) != "<class 'float'>":
-                raise Exception("ConvFresnel2D: set_dx must be a bool or a float.")
-            if set_dx <= 0:
-                raise Exception("ConvFresnel2D: numerical value of set_dx must be > 0.")
-            dx_new = set_dx
-
-        if dx != dx_new:  # interpolate g onto a grid with spacing of approx dx_new
-            [g, x] = self.ResampleField2D(g, x, dx_new, kind=self.params['interp_style'])
-            dx = x[1] - x[0]
-
-        # make the kernel grid (s) match x as closely as possible
-        ns = int(np.round(diam + diam_out)/dx)  # number of points on extended kernel
-        s = np.linspace(-diam/2 - diam_out/2 + dx/2, diam/2 + diam_out/2 - dx/2, ns) # spatial grid of extended kernel
-        ind = np.where(np.abs(s) < diam_out/2)[0] # get the part of s within the 1D output grid
-        [sx, sy] = np.meshgrid(s, s, indexing='xy')
-        i_out = np.where(np.sqrt(sx*sx + sy*sy) > diam_out/2)
-
-        #Calculate Fresnel convoltion kernel, (Goodman 4-16)
-        #  Note: the factor p = 1/(lam*z) is applied later
-        #  Also note: the factor -1j*np.exp(2j*np.pi*z/lam) causes unwanted oscillations with z
-        kern = np.exp(1j*np.pi*(sx*sx + sy*sy)/(lam*z))  # Fresnel kernel
-        if dx > dx_chirp:  # Where does |s| exceed the max step for this dx?
-            s_max = lam*z*self.params['max_chirp_step_deg']/(360*dx)
-            null_ind = np.where(np.sqrt(sx*sx + sy*sy) > s_max)
-            kern[null_ind[0], null_ind[1]] = 0
-        h = conv(kern, g, mode='same', method='fft')  # h is on the s spatial grid
-        h[i_out[0], i_out[1]] = 0.  # zero the field outside the desired region
-        h = h[ind[0]:ind[-1] + 1, ind[0]:ind[-1] + 1]
-        p = 1/(lam*z)
-        if not return_derivs:
-            return([p*h, s[ind]])
-        #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
-        dpdz = -1/(lam*z*z)
-        dkerndz = -1j*np.pi*(sx*sx + sy*sy)*kern/(lam*z*z)
-        dhdz = conv(dkerndz, g, mode='same', method='fft')
-        dhdz[i_out[0], i_out[1]] = 0.
-        dhdz = dhdz[ind[0]:ind[-1] + 1, ind[0]:ind[-1] + 1]
-        return([p*h, dpdz*h + p*dhdz, s[ind]])
-
-    #Apply thin lens phase transformation.
-    # g - electric field impinging on lens
-    # x - spatial coordinate
-    # center - center of lens relative to zero of x
-    # fl - lens focal length (same units as x and wavelength)
-    def ApplyThinLens1D(self, g, x, center, fl, return_derivs=False):
+    #Evaluate the derivative of the phase w.r.t. x to get the direction cosine in 1D.
+    #  note: phase = (2pi/lambda)(alpha*x + sqrt(1 - alpha^2)*z ),
+    #  so d(phase)/dx = (2pi/lambda)*alpha
+    #returns:
+    #   alpha - array of direction cosines w.r.t. x-axis
+    #   gamma                                     z  (note forward propagation only)
+    def GetDirectionCosines1D(self, g, x, index_of_refraction=1):
         if g.shape != x.shape:
-            raise Exception("Input field and spatial grid must have same dimensions.")
-        [dx, diam] = self.GetDxAndDiam(x)
-        lam = self.params['wavelength']
-        max_step = self.params['max_lens_step_deg']*np.pi/180
-        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.abs(center)))
-        if dx > dx_tol:  # interpolate onto higher resolution grid
-            [g, xnew] = self.ResampleField1D(g, x, dx_tol)
-        else:
-            xnew = x
-        h = g*np.exp(-1j*np.pi*(xnew - center)*(xnew - center)/(fl*lam))
-        if not return_derivs:
-            return([h, xnew])
-        dhdc = 2j*np.pi*(xnew - center)*h/(lam*fl)
-        return([h, dhdc, xnew])
+            raise Exception("GetDirectionCosines1D: input field and x must have the same shape.")
+        dx, diam = self.GetDxAndDiam(x)
+        kmag = 2*np.pi*index_of_refraction/self.params['wavelength']  # magnitude of k
 
-    # similar to 1D version, except center must be of length 2
-    def ApplyThinLens2D(self, g, x, center, fl, return_derivs=False):
+        ph = np.unwrap(np.angle(g))
+        dph = ph[1:] - ph[:-1]
+        dphdx = np.hstack((dph[0], dph))/dx
+        alpha = dphdx/kmag
+        gamma = np.sqrt(1 - alpha*alpha)
+        return([alpha, gamma])
+
+    #Evaluate the derivative of the phase w.r.t. (x,y) to get the direction cosines in 2D.
+    #  note: phase = (2pi/lambda)(alpha*x + beta*y + sqrt(1 - alpha^2 - beta^2)*z ),
+    #  so d(phase)/dx = (2pi/lambda)*alpha, d(phase)/dy = (2pi/lambda)*beta
+    #returns:
+    #   alpha - array of direction cosines w.r.t. x-axis
+    #   beta                                      y
+    #   gamma                                     z  (note forward propagation only)
+    def GetDirectionCosines2D(self, g, x, index_of_refraction=1):
         if g.shape[0] != x.shape[0]:
-            raise Exception("ApplyThinLens2D: input field and grid must have same sampling.")
+            raise Exception("GetDirectionCosines2D: input field and grid must have same sampling.")
         if g.ndim != 2:
-            raise Exception("ApplyThinLens2D: input field array must be 2D.")
+            raise Exception("GetDirectionCosines2D: input field array must be 2D.")
         if g.shape[0] != g.shape[1]:
-            raise Exception("ApplyThinLens2D: input field array must be square.")
-        if len(center) != 2:
-            raise Exception("ApplyThinLens2D: center parameter must have len=2.")
+            raise Exception("GetDirectionCosines2D: input field array must be square.")
 
-        [dx, diam] = self.GetDxAndDiam(x)
-        lam = self.params['wavelength']
-        max_step = self.params['max_lens_step_deg']*np.pi/180
-        dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.sqrt(center[0]**2 + center[1]**2)))
-        if dx > dx_tol:  # interpolate onto higher resolution grid
-            [g, x] = self.ResampleField2D(g, x, dx_tol, kind=self.params['interp_style'])
+        dx, diam = self.GetDxAndDiam(x)
+        kmag = 2*np.pi*index_of_refraction/self.params['wavelength']  # magnitude of k
+        nx = len(x)
 
-        [sx, sy] = np.meshgrid(x, x, indexing='xy')
-        sx -= center[0]
-        sy -= center[1]
-        h = g*np.exp(-1j*np.pi*(sx*sx + sy*sy)/(fl*lam))
-        if not return_derivs:
-            return([h, x])
-        dhdc0 = 2j*np.pi*sx*h/(lam*fl)
-        dhdc1 = 2j*np.pi*sy*h/(lam*fl)
-        return([h, [dhdc0, dhdc1], x])
+        ph = np.angle(g)
+        ph -= ph[int(nx/2), int(nx/2)]
+        line = np.unwrap(ph[:, int(nx/2)])
+        ph[:, int(nx/2)] = line
+        ph = np.unwrap(ph, axis=1)
+
+        dphdx = ph[:, 1:] - ph[:,:-1]
+        dphdx = np.vstack((dphdx[:,0], dphdx.T)).T
+        alpha = dphdx/(dx*kmag)
+        dphdy = ph[1:, :] - ph[:-1, :]
+        dphdy = np.vstack((dphdy[0,:], dphdy))
+        beta = dphdy/(dx*kmag)
+
+        dph = ph[1:] - ph[:-1]
+        dphdx = np.hstack((dph[0], dph))/dx
+        alpha = dphdx/kmag
+        gamma = np.sqrt(1 - alpha*alpha - beta*beta)
+        return([alpha, beta, gamma])
 
     #Resample the field to achieve a target spatial resolution given by dx_new
     #  Returns resampled field and new x
@@ -473,6 +549,20 @@ class FourierOptics():
         interp = interp1d(x, g, kind=kind, fill_value=fill_value)
         g = interp(xnew)
         return([g, xnew])
+
+    #3D rotation matrix for positive (?) rotations about 'axis'
+    #t is the rotation angle in degrees.
+    #axis must be 'x', 'y', or 'z'
+    def RotationMatrix(self, t, axis='x'):
+        assert axis == 'x' or axis == 'y' or axis == 'z'
+        s = t*np.pi/180
+        if axis == 'x':
+            mat = np.array([[1, 0, 0], [0, np.cos(s), np.sin(s)],[0, np.sin(-s), np.cos(s)]])
+        elif axis == 'y':
+            mat = np.array([[np.cos(s), 0, np.sin(s)],[0, 1, 0],[np.sin(-s), 0, np.cos(s)]])
+        else:  # 'z'
+            mat = np.array([[np.cos(s), np.sin(s) , 0], [np.sin(-s), np.cos(s),0], [0, 0, 1]])
+        return(mat)
 
     # assuming a regular spaced grid with values at bin centers,
     #  get spacing and diameter from spatial grid x
