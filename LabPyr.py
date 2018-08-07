@@ -84,6 +84,8 @@ class OpticalModels():
             aa = 1.e3/z
             norm = np.array([aa, np.sqrt(1 - aa*aa)])
             field1D, xout = FO.ApplyPlanarPhaseScreen1D(field1D, x, norm, nA=1, nB=2)
+            #undo most of phase screen by simulating a wedge
+            field1D = FO.ApplySnellAtPlane1D(field1D, xout, [0,1], nA=2, nB=1)
 
         field1D, xout = FO.ConvFresnel1D(field1D, x, diam1, z, set_dx=True, return_derivs=False)
 
@@ -108,6 +110,24 @@ class OpticalModels():
         xoutmm = xout/1.e3
         plt.figure()
         plt.imshow(br2D, extent=[xoutmm[0], xoutmm[-1], xoutmm[0], xoutmm[-1]]); plt.colorbar();
+
+        return
+
+    def PropBeamThruInclinedSheet(self):
+        nSheet=2  # index of refaction of sheet
+        SheetThickness=1.e4  # sheet width (microns)
+        SheetAngle=20*np.pi/180  # angle of sheet normal to z-axis
+        norm = [np.sin(SheetAngle), np.cos(SheetAngle)]
+        
+
+        FO = FourierOptics.FourierOptics(pyrparams)
+        diam = self.params['beam_diameter']
+        diam1 = 2.e3 + diam
+        z = self.params['D_e_2_l1'] + self.params['D_l1_2_detector']
+        x = 1.*self.x_Start
+        field1D = 1.*self.field_Start1D
+
+        
 
         return
 

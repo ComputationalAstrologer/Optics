@@ -230,11 +230,12 @@ class FourierOptics():
         if len(normal) != 2:
             raise Exception("ApplyPlanarPhaseScreen1D: normal must have 2 components.")
         lam = self.params['wavelength']
+        normal = np.array(normal)
         normal /= np.sum(normal*normal)
         assert normal[1] != 0
         if np.abs(normal[1]) > 0.999999999:  # return if the normal is in the z direction
             return([g, x])
-        
+
         dx, diam = self.GetDxAndDiam(x)
         dz = - dx*normal[0]/normal[1]
         dph = 360*np.abs(dz*(nA - nB)/lam) 
@@ -242,10 +243,8 @@ class FourierOptics():
             dxnew = dx*self.params['max_plane_step_deg']/dph
             g, x = self.ResampleField1D(g, x, dxnew)
 
-        ph = np.zeros(x.shape)  # Since phase increases with z,
-        for k in range(len(x)):  #  if z > 0, nB > nA, the effect on phase is negative
-                z = - x[k]*normal[0]/normal[1]
-                ph[k] = 2*np.pi*(nA - nB)*z/lam
+        z = -x*normal[0]/normal[1]  # Since phase increases with z, if z > 0, nB > nA, the effect on phase is negative
+        ph = 2*np.pi*(nA - nB)*z/lam
         g = g*np.exp(1j*ph)
         return([g, x])
 
@@ -266,7 +265,7 @@ class FourierOptics():
         lam = self.params['wavelength']
         normal /= np.sum(normal*normal)
         assert normal[2] != 0
-        if np.abs(normal[2]) > 0.999999999:  # return if the normal is in the z direction
+        if np.abs(normal[2]) > 0.9999999999:  # return if the normal is in the z direction
             return([g, x])
 
         dx, diam = self.GetDxAndDiam(x)
@@ -276,14 +275,70 @@ class FourierOptics():
             dxnew = dx*self.params['max_plane_step_deg']/dph
             g, x = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
 
+        # Since phase increases with z, if z > 0, nB > nA, the effect on phase is negative
         xs, ys = np.meshgrid(x, x, indexing='xy')
-        ph = np.zeros(xs.shape)  # Since phase increases with z,
-        for k in range(len(x)):  #  if z > 0, nB > nA, the effect on phase is negative
-            for l in range(len(x)):
-                z = - (xs[k,l]*normal[0] + ys[k,l]*normal[1])/normal[2]
-                ph[k,l] = 2*np.pi*(nA - nB)*z/lam
+        z = - (xs*normal[0] + ys*normal[1])/normal[2]
+        ph = 2*np.pi*(nA - nB)*z/lam
         g = g*np.exp(1j*ph)
         return([g, x])
+
+    def ApplySnellAtPlane1D(self, g, x, normal, nA=1, nB=1.5):
+        if g.shape != x.shape:
+            raise Exception("ApplySnellAtPlane1D: input field and grid must have same sampling.")
+        if len(normal) != 2:
+            raise Exception("ApplySnellAtPlane1D: normal must have 2 components.")
+        norm = np.array(normal)
+        norm = norm/np.sum(norm*norm)
+        assert normal[1] != 0
+        norm = norm*np.sign(norm[1])  # make sure normal z compontent is +
+        #make a coord system out of normal anti-normal
+        norm = norm/np.sqrt(np.sum(norm*norm))
+        anti = np.array([- norm[1]**2, norm[0]*norm[1]])
+        anti = anti/np.sqrt(np.sum(anti*anti))
+        #the transformation into (norm, anti) coords is governed by tmat
+        #I think tmat has to be an involutory matrix so that tmat=itmat
+        tmat = np.array([[anti[0], anti[1]], [norm[0],norm[1]]])
+        itmat = np.linalg.inv(tmat)  # probably don't need this
+
+        #note kA and kB are travel directions, not the wave vector "k"
+        #kA is the wave direction in medium A, in (norm, anti) coords
+        #kB                                 B, in (norm, anit) coords
+        #also note that we expect norm and the travel direction to be mostly
+        #  in the +z direction, so take note of how kA is calculated.
+        #  kA[1, k] is the component parallel to the normal ("~z")
+        #  kA[0, k] is the component perpendicular to the normal ("~x").
+        [alpha, gamma] = self.GetDirectionCosines1D(g, x, index_of_refraction=nA)
+        alphaB = 0*alpha  # these are direction cosines after interface
+        gammaB = 0*gamma
+        kA = np.zeros(2)
+        kB = np.zeros(2)
+        cr = np.zeros(2)
+        for k in range(len(x)):
+            kA[:] = tmat.dot(np.array([alpha[k], gamma[k]]))
+            kA *= np.sign(kA[1])  # must have a + normal component
+            #sin_theta is the sin(theta) in Snell's law
+            sin_theta = np.sqrt(1 - kA[1]**2)
+            #now use Snell's law
+            sin_theta = nB*np.abs(sin_theta)/nA
+            kB[1] =  np.sqrt(1 - sin_theta**2)
+            kB[0] = np.sign(kA[0])*np.abs(sin_theta)
+            #now put kB into laboratory coordinate system
+            cr[:] = itmat.dot(kB)
+            gammaB[k] = cr[1]
+            alphaB[k] = cr[0]
+
+        #Now that we have alphaB, we know the phase gradient on the other side of the plane
+        phi = np.zeros(len(x))  #phase of wave on other side
+        mid = int(len(x)/2)
+        dx, diam = self.GetDxAndDiam(x)
+        kmag = nB*2*np.pi/self.params['wavelength']  # magnitude of wave vector k
+        #intergrate gradient to get phi
+        for k in np.arange(mid+1, len(x)):
+            phi[k] = phi[k - 1] + dx*kmag*alphaB[k]
+        for k in np.linspace(mid-1, 0, mid).astype('int'):
+            phi[k] = phi[k+1] - dx*kmag*alphaB[k]
+
+        return(np.abs(g)*np.exp(1j*phi))
 
     #This applies the pyramid's phase ramp, applies re-gridding if phase-step is too big
     # g - input field
@@ -419,38 +474,6 @@ class FourierOptics():
 
         return([zs, ee])
 
-    def ApplySnellAtPlane1D(self, g, x, normal, nA=1, nB=1.5):
-        if g.shape != x.shape:
-            raise Exception("ApplySnellAtPlane1D: input field and grid must have same sampling.")
-        if len(normal) != 2:
-            raise Exception("ApplySnellAtPlane1D: normal must have 2 components.")
-        lam = self.params['wavelength']
-        normal /= np.sum(normal*normal)
-        normal = np.array(normal)
-        assert normal[1] != 0
-        normal *= np.sign(normal[1])  # make sure normal has a +z compontent
-
-        [alpha, gamma] = self.GetDirectionCosines1D(g, x, index_of_refraction=nA)
-        #tA and tB are the angles in Snell's law, i.e. w.r.t. the normal vector
-        sintA = np.zeros(x.shape)  # sin(theta) in starting medium (A)
-        for k in range(len(x)):
-            sintA = np.abs(np.cross([normal, np.array([alpha[k], gamma[k]])]))
-        sintB = nA*sintA/nA
-        
-
-        dx, diam = self.GetDxAndDiam(x)
-        dz = - dx*normal[0]/normal[1]
-        dph = 360*np.abs(dz*(nA - nB)/lam) 
-        if dph > self.params['max_plane_step_deg']:
-            dxnew = dx*self.params['max_plane_step_deg']/dph
-            g, x = self.ResampleField1D(g, x, dxnew)
-
-        ph = np.zeros(x.shape)  # Since phase increases with z,
-        for k in range(len(x)):  #  if z > 0, nB > nA, the effect on phase is negative
-                z = - x[k]*normal[0]/normal[1]
-                ph[k] = 2*np.pi*(nA - nB)*z/lam
-        g = g*np.exp(1j*ph)
-        return([g, x])
 
     #Evaluate the derivative of the phase w.r.t. x to get the direction cosine in 1D.
     #  note: phase = (2pi/lambda)(alpha*x + sqrt(1 - alpha^2)*z ),
@@ -465,6 +488,7 @@ class FourierOptics():
         kmag = 2*np.pi*index_of_refraction/self.params['wavelength']  # magnitude of k
 
         ph = np.unwrap(np.angle(g))
+        ph -= ph[int(len(x)/2)]
         dph = ph[1:] - ph[:-1]
         dphdx = np.hstack((dph[0], dph))/dx
         alpha = dphdx/kmag
