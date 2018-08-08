@@ -113,21 +113,51 @@ class OpticalModels():
 
         return
 
-    def PropBeamThruInclinedSheet(self):
-        nSheet=2  # index of refaction of sheet
-        SheetThickness=1.e4  # sheet width (microns)
-        SheetAngle=20*np.pi/180  # angle of sheet normal to z-axis
-        norm = [np.sin(SheetAngle), np.cos(SheetAngle)]
-        
-
-        FO = FourierOptics.FourierOptics(pyrparams)
+    #This focuses a beam on a wedge.  When the angle tip_deg == 0, the normal to the
+    #  exit surface is in the z-direction.
+    #Simulates a 4f system with the wedge at the focal spot.
+    #tip_deg - tip angle of wedge (degrees)
+    #dist_err - (microns) error in z position of wedge (should be at focal spot)
+    def FocusBeamOnInclinedWedge4F(self, tip_deg=0, dist_error=0):
+        tip = tip_deg*np.pi/180
+        ind_ref=1.5  # index of refaction
+        WedgeThickness=5.e4  # wedge width at entry point (microns)
+        WedgeAngle = 2*np.pi/180  #  angle between entry surface and exit surface
+        focal_length = 10.e4
         diam = self.params['beam_diameter']
-        diam1 = 2.e3 + diam
-        z = self.params['D_e_2_l1'] + self.params['D_l1_2_detector']
-        x = 1.*self.x_Start
-        field1D = 1.*self.field_Start1D
+        lam = self.params['wavelength']
+        d0 = focal_length + dist_error #distance from entrance to wedge
+        d1 = focal_length - ind_ref*WedgeThickness - dist_error # distance from wedge exit to detector
 
-        
+        #make normal vectors for wedge entrance and exit.  rotate to include tip
+        norm0 = [-np.sin(WedgeAngle), np.cos(WedgeAngle)]  #  normal at wedge entrace (note +z comp.)
+        norm1 = [0, 1]  # normal at wedge exit
+        rmat = np.array([[np.cos(tip), np.sin(-tip)], [np.sin(tip), np.cos(tip)]])
+        norm0 = rmat.dot(norm0)
+        norm1 = rmat.dot(norm1)
+
+        x1d = 1.*self.x_Start
+        field1d = 1.*self.field_Start1D
+        FO = FourierOptics.FourierOptics(pyrparams)
+
+        #prop to lens, dist = 2*focal_length, apply lens
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, 4*diam, 2*focal_length, set_dx=True, return_derivs=False)
+        field1d, x1d = FO.ApplyThinLens1D(field1d, x1d, 0., focal_length, return_derivs=False)
+        #prop to wedge
+        spot_size = 4*2*focal_length*lam/diam + 2*np.abs(dist_error)*diam/focal_length
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, spot_size, d0, set_dx=True, return_derivs=False)
+        #refract at wedge entrance
+        field1d = FO.ApplySnellAtPlane1D(field1d, x1d, norm0, nA=1, nB=ind_ref)
+        #propagate through wedge
+        spot_size = 2*WedgeAngle*WedgeThickness*(ind_ref-1) + 2*(dist_error + WedgeThickness)*diam/focal_length
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, spot_size, WedgeThickness,
+                                        index_of_refraction=ind_ref, set_dx=True, return_derivs=False)
+        #refract at wedge exit
+        field1d = FO.ApplySnellAtPlane1D(field1d, x1d, norm1, nA=ind_ref, nB=1)
+        #prop to detector plane
+        spot_size = diam + 2*focal_length*(ind_ref - 1)*WedgeAngle
+        field1d, x1d = FO.ConvFresnel1D(field1d, x1d, spot_size, d1, index_of_refraction=1,
+                                        set_dx=True, return_derivs=False)
 
         return
 
