@@ -65,6 +65,7 @@ def ScalarProb(b_true=1, q_true=.5, y_std =0.04, q_std=0.15, Nruns=1000000):
     print('b_true=' + str(b_true) + ', mean naive estimate of b is ' + str(mean_naive))
 
     plt.figure()
+    plt.title('histogram of naive estimates')
     plt.hist(b_naive, bins=np.linspace(-b_true/2,3*b_true, 50))
 
     
