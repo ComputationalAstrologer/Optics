@@ -10,6 +10,38 @@ Created on Wed Dec  5 17:10:16 2018
 import numpy as np
 import matplotlib.pyplot as plt
 
+#this compares sequential least-squares estimation with an initial prior
+#  to standard batch estimation with an initial prio
+def CompareSequentialEst(sigma_noise=0.2, sigma_C0=100.):
+    A = np.matrix(np.random.randn(5,2)) # system matrix
+    xt = np.matrix([2,1]).T # true value of x
+    x0 = np.matrix([0,3]).T #  mean of of initial prior
+    C0 = sigma_C0*sigma_C0*np.matrix(np.eye(2)) # initial prior covariance
+    iC0 = np.linalg.inv(C0)
+    Cy = sigma_noise*sigma_noise*np.matrix(np.eye(5))
+    iCy = np.linalg.inv(Cy)
+    yt = A.dot(xt) # noiseless measurement values
+    ym = yt + sigma_noise*np.random.randn(5,1)  # measured values of y
+    z = A.T.dot(iCy.dot(ym)) + iC0.dot(x0)
+    #standard estimate
+    xcov = np.linalg.inv( A.T.dot(iCy.dot(A)) + iC0)
+    xhat = xcov.dot(z)
+    #sequential estimate, one element of y at a time
+    Cx = C0  #initial covariance of x
+    xc = x0  #initial estimate of x
+    for k in range(5):
+        B = A[k,:]
+        D = Cy[k,k]
+        yy = ym[k]
+        icov_old = np.linalg.inv(Cx)
+        Cx = np.linalg.inv(B.T.dot(B)/D + icov_old)
+        xc = Cx.dot(B.T*yy/D +  icov_old*xc)
+    print("standard xhat = \n" + str(xhat) )
+    print("sequential xhat = \n" + str(xc))
+    print("standard cov = \n" + str(xcov))
+    print("sequential cov = \n" + str(Cx))
+
+
 #Scalar regression with noise in both observation and independent variable.
 #Consider the scalar regression problem y = q*b + n:
 #    y = observation
@@ -67,9 +99,3 @@ def ScalarProb(b_true=1, q_true=.5, y_std =0.04, q_std=0.15, Nruns=1000000):
     plt.figure()
     plt.title('histogram of naive estimates')
     plt.hist(b_naive, bins=np.linspace(-b_true/2,3*b_true, 50))
-
-    
-    
-
-    
-    
