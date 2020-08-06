@@ -308,7 +308,7 @@ class FourierOptics():
         #  kA[1, k] is the component parallel to the normal ("~z")
         #  kA[0, k] is the component perpendicular to the normal ("~x").
         [alpha, gamma] = self.GetDirectionCosines1D(g, x, index_of_refraction=nA)
-        alphaB = 0*alpha  # these are direction cosines after interface
+        alphaB = 0*alpha  # these are direction cosines after the interface
         gammaB = 0*gamma
         kA = np.zeros(2)
         kB = np.zeros(2)
@@ -332,11 +332,13 @@ class FourierOptics():
         mid = int(len(x)/2)
         dx, diam = self.GetDxAndDiam(x)
         kmag = nB*2*np.pi/self.params['wavelength']  # magnitude of wave vector k
-        #intergrate gradient to get phi
+        #intergrate gradient to get phi, note that this preserves the phase as the mid-point
+        #  in order to reduce nonlinearities in application of Snell's law
+        phi_mid = np.angle(g)[mid]  # phase at midpoint
         for k in np.arange(mid+1, len(x)):
-            phi[k] = phi[k - 1] + dx*kmag*alphaB[k]
+            phi[k] = phi_mid + phi[k - 1] + dx*kmag*alphaB[k]
         for k in np.linspace(mid-1, 0, mid).astype('int'):
-            phi[k] = phi[k+1] - dx*kmag*alphaB[k]
+            phi[k] = phi_mid + phi[k+1] - dx*kmag*alphaB[k]
 
         return(np.abs(g)*np.exp(1j*phi))
 

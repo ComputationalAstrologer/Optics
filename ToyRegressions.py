@@ -28,14 +28,15 @@ def CompareSequentialEst(sigma_noise=0.2, sigma_C0=100.):
     xhat = xcov.dot(z)
     #sequential estimate, one element of y at a time
     Cx = C0  #initial covariance of x
+    iCx = np.linalg.inv(Cx)
     xc = x0  #initial estimate of x
     for k in range(5):
         B = A[k,:]
         D = Cy[k,k]
-        yy = ym[k]
-        icov_old = np.linalg.inv(Cx)
-        Cx = np.linalg.inv(B.T.dot(B)/D + icov_old)
-        xc = Cx.dot(B.T*yy/D +  icov_old*xc)
+        icov_old = iCx
+        iCx = B.T.dot(B)/D + icov_old
+        Cx = np.linalg.inv(iCx)
+        xc = Cx.dot(B.T*ym[k]/D +  icov_old*xc)
     print("standard xhat = \n" + str(xhat) )
     print("sequential xhat = \n" + str(xc))
     print("standard cov = \n" + str(xcov))
