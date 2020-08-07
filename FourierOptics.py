@@ -418,6 +418,39 @@ class FourierOptics():
         # Unfortunately, I think finite differences is the best option for these derivatives.
         #    Make sure the steps are not to small for the delta x
 
+    #AlphaVec (degrees) is the vector of angles relative to the z=0 plane of each face (len=3)
+    #FaceCenterAngles (degrees) is the azimuthal angle (about the z-axis) of face centers.
+    #rot0 (degrees) is constant that gets added to all 3 FaceCenterAngles
+    def ThreeSidedPyramidHeight(self, x, AlphaVec=None, FaceCenterAngles=None, rot0=60.):
+        if FaceCenterAngles is None:
+            FaceCenterAngles = np.array([0.,120.,240.])
+        else:
+            FaceCenterAngles = np.array(FaceCenterAngles)
+            assert FaceCenterAngles.shape == (3,)
+        if AlphaVec is None:
+            AlphaVec = self.params['pyramid_slope_deg']*np.array([1.,1.,1.])
+        else:
+            AlphaVec = np.array(AlphaVec)
+            assert AlphaVec.shape == (3,)
+            assert all(AlphaVec > 0)
+        FaceCenterAngles += rot0
+        AlphaVec *= np.pi/180.
+
+        normvec = np.zeros((3,3))  # each col is normal vector
+        for k in range(3):
+            normvec[1,k] = np.sin(AlphaVec[k])
+            normvec[2,k] = np.cos(AlphaVec[k])
+            normvec[:,k] = self.RotationMatrix(FaceCenterAngles[k], axis='z').dot(normvec[:,k])
+
+        [px, py] = np.meshgrid(x , x , indexing='xy')
+        z = np.zeros((x.shape[0], x.shape[0], 3))  # contains the heights of all 3 planes
+        for k in range(3):
+            z[:, :, k] = (normvec[0,k]*px + normvec[1,k]*py)/normvec[2,k]
+        zs = np.min(z, axis=2)
+        return(zs)
+
+
+
     #tip and tilt are with respect the pyramid axes
     #this also keeps track of the pyramid axis: ex, ey, ez.  This makes it easier to remove
     #  the non-physical angular offset introduced by (tip, tilt) != 0
