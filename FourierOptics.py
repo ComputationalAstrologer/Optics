@@ -449,7 +449,7 @@ class FourierOptics():
             normvec[:,k] = self.RotationMatrix(FaceCenterAngles[k], axis='z').dot(normvec[:,k])
 
         [px, py] = np.meshgrid(x , x , indexing='xy')
-        z = np.zeros((x.shape[0], x.shape[0], N))  # contains the heights of all 3 planes
+        z = np.zeros((x.shape[0], x.shape[0], N))  # contains the heights of all N planes
         for k in range(N):
             z[:, :, k] = (normvec[0,k]*px + normvec[1,k]*py)/normvec[2,k]
         zs = np.min(z, axis=2)
