@@ -381,6 +381,7 @@ class FourierOptics():
         d_phasor = 1j*phasor*np.hstack([bb,aa])
         return([g*phasor, g*d_phasor, x])
 
+
     #rotate (degrees) is the offset of the rotation of the pyramid (nominal is 45 deg)
     #   Zero rotation correspons to pyramid edges at 45 degrees to the x-y coords
     #tip (degrees) corresponds to rotating the pyramid about the apex in x-z plane
@@ -418,22 +419,55 @@ class FourierOptics():
         # Unfortunately, I think finite differences is the best option for these derivatives.
         #    Make sure the steps are not to small for the delta x
 
-    #SlopeDeviations (degrees) is the vector of deviations of the angles relative to the z=0 plane of each face (len=N)
+    #see self.NSidedPyramidHeight for the other parameters
+    #reflective (bool) - if True phase change is multiplied by -2 and self.params['indref'] doesn't matter
+    def ApplyNSidedPyrPhase2D(self, g, x, SlopeDeviations=None, FaceCenterAngleDeviations=None, N=4,
+                              NominalSlope=1., rot0=None, reflective=True):
+        if g.shape[0] != x.shape[0]:
+            raise Exception("ApplyPyramidPhaseRamp2D: input field and grid must have same sampling.")
+        if g.ndim != 2:
+            raise Exception("ApplyPyramidPhaseRamp2D: input field array must be 2D.")
+        if g.shape[0] != g.shape[1]:
+            raise Exception("ApplyPyramidPhaseRamp2D: input field array must be square.")
+        assert np.isscalar(NominalSlope) and NominalSlope > 0.
+        if SlopeDeviations is None:
+            SlopeDeviations = np.zeros((N,))
+        SlopeDeviations = np.array(SlopeDeviations)
+        assert SlopeDeviations.shape == (N,)
+        lam = self.params['wavelength']
+        indref = self.params['indref']
+        tslope = np.tan(np.max(NominalSlope + SlopeDeviations)*np.pi/180)
+        dx, diam = self.GetDxAndDiam(x)
+        if reflective:
+            phase_step = 2*360*dx*tslope/lam
+        else:
+            phase_step = 360*(indref-1)*dx*tslope/lam
+        if np.abs(phase_step) > self.params['max_pyramid_phase_step']:
+            dxnew = self.params['max_pyramid_phase_step']*lam/(360*tslope)
+            [g, x] = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
+        height = self.NSidedPyramidHeight(x, SlopeDeviations=SlopeDeviations, FaceCenterAngleDeviations=FaceCenterAngleDeviations,
+                                          N=N, NominalSlope=NominalSlope, rot0=rot0)
+        if reflective:
+            ramp = np.exp(4j*np.pi*height/lam)
+        else:
+            ramp = np.exp(-2j*np.pi*height(indref-1)/lam)
+        g *= ramp
+        return((g, x))
+
+
+#SlopeDeviations (degrees) is the vector of deviations of the angles relative to the z=0 plane of each face (len=N)
     #Nominal slope (degrees, > 0) is the nominal slope of the pyramid faces relative to the z=0 plane
     #N is the number of sides of the pyramid
     #FaceCenterAngleDeviations (degrees) is the deviation in azimuthal angles (about the z-axis) of the face centers.
     #rot0 (degrees) is constant that gets added to all N FaceCenterAngles
-    def NSidedPyramidHeight(self, x, SlopeDeviations=None, FaceCenterAngleDeviations=None, N=4, NominalSlope=None, rot0=None):
+    def NSidedPyramidHeight(self, x, SlopeDeviations=None, FaceCenterAngleDeviations=None, N=4, NominalSlope=1., rot0=None):
         if rot0 is None: rot0 = 180./N
         if FaceCenterAngleDeviations is None:
             FaceCenterAngleDeviations = np.zeros((N,))
         else:
             FaceCenterAngleDeviations = np.array(FaceCenterAngleDeviations)
             assert FaceCenterAngleDeviations.shape == (N,)
-        if NominalSlope is None:
-            NominalSlope = self.params['pyramid_slope_deg']
-        assert np.isscalar(NominalSlope)
-        assert NominalSlope > 0.
+        assert np.isscalar(NominalSlope) and NominalSlope > 0.
         if SlopeDeviations is None:
             SlopeDeviations = np.zeros((N,))
         SlopeDeviations = np.array(SlopeDeviations)

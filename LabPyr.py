@@ -24,13 +24,13 @@ pyrparams = dict()
 pyrparams['beam_diameter'] = 1.e3 # input beam diameter (microns)
 pyrparams['wavelength'] = 0.6328 # wavelength (microns)
 pyrparams['indref'] = 1.5 # pyramid index of refraction
-pyrparams['pyramid_slope_deg'] = 1.5# 10.5  # slope of pyramid faces relative to horizontal (degrees)
+pyrparams['pyramid_slope_deg'] = 0.25# 10.5  # slope of pyramid faces relative to horizontal (degrees)
 pyrparams['pyramid_roofsize'] = 16 # length of one side of square pyramid roof (microns)
 pyrparams['pyramid_height'] = 1.e4 # (microns)  height of pyramid
 pyrparams['n_starting_points'] = 150  # number of resolution elements in initital beam diameter
 pyrparams['D_e_2_l1'] = 200.e3 # nominal distance from entrance pupil to lens1 (microns)
 pyrparams['f1'] = 100.e3 # focal length of lens #1 (focuses light on pyramid tip)
-pyrparams['lens1_fill_diameter'] = 3.e3  #  computational beam width at lens#1.  This matters!
+pyrparams['lens1_fill_diameter'] = 2.e3  #  computational beam width at lens#1.  This matters!
 pyrparams['beam_diameter_at_pyramid'] = 1.e3  # focal spot size at pyramid width
 pyrparams['D_l1_2_pyr'] = 100.e3 # distance from lens1 to pyramid tip
 pyrparams['D_l1_2_detector'] = 200.e3  # distance from lens to detector in 4f system
@@ -39,12 +39,12 @@ pyrparams['D_foc_2_l2'] = 50.e3 # distance from focus to lens #2 (includes effec
 pyrparams['f2'] = 5023.e3 # focal length of lens #2
 pyrparams['diam_lens2'] = 6.e3 # effective diameter of lens2 (set by a stop)
 pyrparams['D_l2_2_detector'] = 10.e3 # distrance from lens2 to detector
-pyrparams['detector_width'] = 6.e3 # width of detector
+pyrparams['detector_width'] = None # width of detector
 pyrparams['max_chirp_step_deg'] = 90  # maximum allowed value (degrees) in chirp step for Fresnel prop
 pyrparams['max_lens_step_deg'] = 20 # maximum step size allowed for lens phase screen
 pyrparams['max_plane_step_deg'] = 20  # (degrees) maximum phase step allowed for planar phase screen
 pyrparams['max_pyramid_phase_step'] = 20  # maximum step (degrees) allowed for pyramid phase ramp
-pyrparams['interp_style'] = 'cubic'  # type of 2d interpolator
+pyrparams['interp_style'] = 'cubic'  # type of 2d interpolator for field resampling
 
 def sq(field):
     return(np.real(field*np.conj(field)))
@@ -275,7 +275,7 @@ class WorkingOpticalModels():
         plt.figure()
         plt.imshow(br2D, extent=[xoutmm[0], xoutmm[-1], xoutmm[0], xoutmm[-1]]); plt.colorbar();
 
-        return
+        return((field2D, xout))
 
     #This simulates propagation of a beam to a lens and then to a plane
     #   that is defocus from the focal length of the lens
@@ -537,3 +537,55 @@ class WorkingOpticalModels():
             plt.ylabel('y (microns)')
 
         return
+
+    #this models a reflective 3 sided pyramid in an F4 system (requires only 1 lens)
+    #g is the complex-valued field to be propagated.  Can be None for normal plane wave
+    def PropF4Reflective3SidedPyramid(self, g=None, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0., fig_list=None):
+        FO = FourierOptics.FourierOptics(pyrparams)
+        obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
+        focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid tip)
+        d2pyr = self.params['D_l1_2_pyr'] + pyr_dist_error # distance from lens1 to pyramid tip
+        d_pyr_det = self.params['D_l1_2_detector'] - d2pyr
+        diam0 = self.params['lens1_fill_diameter']
+        # max angle between beams (approx)
+        beta =  2*self.params['pyramid_slope_deg']*np.pi/180
+        detector_diam = 6*focal_length*np.tan(beta/2) + self.params['beam_diameter']
+        if g is None:
+            g = self.field_Start2D
+        else:
+            assert g.shape == self.field_Start2D.shape
+
+        # propagate field to lens
+        z = obd
+        field2d, x2d = FO.ConvFresnel2D(g, self.x_Start, diam0, z, set_dx=9.9, return_derivs=False)
+        br2d = np.abs(field2d); br2d /= np.max(br2d)
+        
+        #apply phase screen due to lens
+        lens_center = [0, 0]
+        field2d, x2d = FO.ApplyThinLens2D(field2d, x2d, lens_center, focal_length, return_derivs=False)
+
+        #propagate to pyramid tip
+        z = d2pyr
+        diam_pyr = self.params['beam_diameter_at_pyramid']
+        field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
+        print("at pyramid: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x) = " + str(len(x2d)))
+        br2d = np.abs(field2d); br2d /= np.max(br2d)
+
+        #apply pyramid phase screen to simulate reflection off pyramid glass
+        #the columns of pyr_ax are unit vectors of the pyramid axes
+        field2d, x2d = FO.ApplyNSidedPyrPhase2D(field2d, x2d, SlopeDeviations=SlopeDeviations,
+                        FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=3,
+                        NominalSlope=pyrparams['pyramid_slope_deg'], rot0=None, reflective=True)
+        print("after pyramid apex: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
+        
+        #propagate field to detector
+        z = d_pyr_det
+        field2d, x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=False)
+        print("at detector: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x) = " + str(len(x2d)))
+        br2d = np.real(np.abs(field2d)); br2d /= np.max(br2d)
+
+        #plt.figure(); plt.imshow(br2d); plt.colorbar(); plt.title('sqrt(intensity)')
+        #height = FO.NSidedPyramidHeight(x2d, SlopeDeviations=SlopeDeviations, FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=3, NominalSlope=pyrparams['pyramid_slope_deg'], rot0=None)
+        #plt.figure(); plt.imshow(height); plt.colorbar(); plt.title('pyramid height (microns)');
+
+        return((field2d, x2d))
