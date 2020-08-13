@@ -28,17 +28,17 @@ pyrparams['pyramid_slope_deg'] = 0.25# 10.5  # slope of pyramid faces relative t
 pyrparams['pyramid_roofsize'] = 16 # length of one side of square pyramid roof (microns)
 pyrparams['pyramid_height'] = 1.e4 # (microns)  height of pyramid
 pyrparams['n_starting_points'] = 150  # number of resolution elements in initital beam diameter
-pyrparams['D_e_2_l1'] = 200.e3 # nominal distance from entrance pupil to lens1 (microns)
+pyrparams['D_e_to_l1'] = 200.e3 # nominal distance from entrance pupil to lens1 (microns)
 pyrparams['f1'] = 100.e3 # focal length of lens #1 (focuses light on pyramid tip)
 pyrparams['lens1_fill_diameter'] = 2.e3  #  computational beam width at lens#1.  This matters!
 pyrparams['beam_diameter_at_pyramid'] = 1.e3  # focal spot size at pyramid width
-pyrparams['D_l1_2_pyr'] = 100.e3 # distance from lens1 to pyramid tip
-pyrparams['D_l1_2_detector'] = 200.e3  # distance from lens to detector in 4f system
+pyrparams['D_l1_to_pyr'] = 100.e3 # distance from lens1 to pyramid tip
+pyrparams['D_l1_to_detector'] = 200.e3  # distance from lens to detector in 4f system
 pyrparams['apex_diam'] = 8 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
-pyrparams['D_foc_2_l2'] = 50.e3 # distance from focus to lens #2 (includes effective OPL thru prism)
+pyrparams['D_foc_to_l2'] = 50.e3 # distance from focus to lens #2 (includes effective OPL thru prism)
 pyrparams['f2'] = 5023.e3 # focal length of lens #2
 pyrparams['diam_lens2'] = 6.e3 # effective diameter of lens2 (set by a stop)
-pyrparams['D_l2_2_detector'] = 10.e3 # distrance from lens2 to detector
+pyrparams['D_l2_to_detector'] = 10.e3 # distrance from lens2 to detector
 pyrparams['detector_width'] = None # width of detector
 pyrparams['max_chirp_step_deg'] = 90  # maximum allowed value (degrees) in chirp step for Fresnel prop
 pyrparams['max_lens_step_deg'] = 20 # maximum step size allowed for lens phase screen
@@ -129,9 +129,9 @@ class NotWorkingOpticalModels():
         print("initial x.shape= " + str(self.x_Start.shape))
 
         # Fresnel prop to lens #1
-        z = self.params['D_e_2_l1']
+        z = self.params['D_e_to_l1']
         [f, df_dparam, x] = FO.ConvFresnel1D(self.field_Start1D, self.x_Start,1.2*diam0, z, return_derivs=True)
-        self.grads['D_e_2_l1'] = df_dparam
+        self.grads['D_e_to_l1'] = df_dparam
 
         print("after prop to lens1 x.shape= " + str(x.shape))
         plt.figure(); plt.plot(x, np.real(f*np.conj(f))); 
@@ -153,7 +153,7 @@ class NotWorkingOpticalModels():
             self.grads[key], _ = FO.ConvFresnel1D(self.grads[key], x, diam1, foc, return_derivs=False)
         f, df_dparam, x = FO.ConvFresnel1D(f, x, diam1, foc, return_derivs=True) # prop field
         self.Focal_field = f*1.0 # ensure deep copy
-        self.grads['D_l1_2_apex'] = df_dparam
+        self.grads['D_l1_to_apex'] = df_dparam
 
         print("after prop to focus x.shape= " + str(x.shape))
         plt.figure(); plt.plot(x, np.real(f*np.conj(f)));
@@ -168,12 +168,12 @@ class NotWorkingOpticalModels():
         print("after pyramid x.shape= " + str(x.shape))
 
         # Fresnel prop to lens #2
-        z = self.params['D_foc_2_l2']
+        z = self.params['D_foc_to_l2']
         diam2 = self.params['diam_lens2']
         for key in self.grads:  # propagate gradients
             self.grads[key], _ = FO.ConvFresnel1D(self.grads[key], x, diam2, z, return_derivs=False)
         f, df_dparam, x = FO.ConvFresnel1D(f, x, diam2, z, return_derivs=True)
-        self.grads['D_foc_2_l2'] = df_dparam
+        self.grads['D_foc_to_l2'] = df_dparam
 
         plt.figure(); plt.plot(x, np.real(f*np.conj(f)));
         plt.title('Intensity impinging on lens2'); plt.xlabel("distance ($\mu$m)")
@@ -189,7 +189,7 @@ class NotWorkingOpticalModels():
         print("post lens2 x.shape= " + str(x.shape))
 
         # Fresnel prop to detector
-        z = self.params['D_l2_2_detector']
+        z = self.params['D_l2_to_detector']
         diam2 = self.params['detector_width']
 
         if False:  #  compare full result to maintain_dx results
@@ -206,7 +206,7 @@ class NotWorkingOpticalModels():
         for key in self.grads:  # propagate gradients
             self.grads[key], _ = FO.ConvFresnel1D(self.grads[key], x, diam2, z, return_derivs=False, maintain_dx=True)
         f, df_dparam, x = FO.ConvFresnel1D(f, x, diam2, z, return_derivs=True, maintain_dx=True)
-        self.grads['D_l2_2_detector'] = df_dparam
+        self.grads['D_l2_to_detector'] = df_dparam
 
         print("at detector x.shape= " + str(x.shape))
         plt.figure(); plt.plot(x, np.real(f*np.conj(f))); plt.title('Intensity at detector'); plt.xlabel("distance ($\mu$m)")
@@ -240,7 +240,7 @@ class WorkingOpticalModels():
         FO = FourierOptics.FourierOptics(pyrparams)
         diam = self.params['beam_diameter']
         diam1 = 1.e3 + diam
-        z = self.params['D_e_2_l1'] + self.params['D_l1_2_detector']
+        z = self.params['D_e_to_l1'] + self.params['D_l1_to_detector']
         x1d = self.x_Start
         field1D = 1.*self.field_Start1D
 
@@ -286,7 +286,7 @@ class WorkingOpticalModels():
     def PropBeamFocus(self, defocus=0):
         FO = FourierOptics.FourierOptics(pyrparams)
         diam0 = self.params['beam_diameter'] + 1.e3
-        z = self.params['D_e_2_l1']
+        z = self.params['D_e_to_l1']
         field1d, x1d = FO.ConvFresnel1D(self.field_Start1D, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
         field2d, x2d = FO.ConvFresnel2D(self.field_Start2D, self.x_Start, diam0, z, set_dx=True, return_derivs=False)
         br1d = sq(field1d)
@@ -338,8 +338,8 @@ class WorkingOpticalModels():
     #This simulates an f4 optical system, in which (image distance)=(object distance)=2f
     def PropF4(self):
         FO = FourierOptics.FourierOptics(pyrparams)
-        obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
-        imd = self.params['D_l1_2_detector']
+        obd = self.params['D_e_to_l1'] # nominal distance from entrance pupil to lens1 (microns)
+        imd = self.params['D_l1_to_detector']
         diam0 = self.params['lens1_fill_diameter']
         
 
@@ -411,10 +411,10 @@ class WorkingOpticalModels():
         FO = FourierOptics.FourierOptics(pyrparams)
         tip = 0 #set to 0 b/c that feature doesn't work
         tilt = 0 #set to -0- b/c that feature does not work
-        obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
+        obd = self.params['D_e_to_l1'] # nominal distance from entrance pupil to lens1 (microns)
         focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid tip)
-        d2pyr = self.params['D_l1_2_pyr'] + pyr_dist_error # distance from lens1 to pyramid tip
-        d_pyr_det = self.params['D_l1_2_detector'] - d2pyr
+        d2pyr = self.params['D_l1_to_pyr'] + pyr_dist_error # distance from lens1 to pyramid tip
+        d_pyr_det = self.params['D_l1_to_detector'] - d2pyr
         diam0 = self.params['lens1_fill_diameter']
         # angle between beams, see Eq. 21 in Sec. 4.1 of Depierraz' thesis
         beta =  2*(self.params['indref'] - 1)*self.params['pyramid_slope_deg']*np.pi/180
@@ -549,10 +549,7 @@ class WorkingOpticalModels():
         if return_derivs is not False:
             raise Exception("pyr_dist_error appears in two steps.  Make sure this is done correctly in the derivs.  See reflective pyramid code for procedure.")
         FO = FourierOptics.FourierOptics(pyrparams)
-        obd = self.params['D_e_2_l1'] # nominal distance from entrance pupil to lens1 (microns)
-        focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid tip)
-        d2pyr = self.params['D_l1_2_pyr'] + pyr_dist_error # distance from lens1 to pyramid tip
-        d_pyr_det = self.params['D_l1_2_detector'] - d2pyr
+        focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid t
         diam0 = self.params['lens1_fill_diameter']
         nomslope = self.params['pyramid_slope_deg']
         # max angle between beams (approx)
@@ -566,7 +563,7 @@ class WorkingOpticalModels():
             derivs = dict()
 
         # propagate field to lens
-        z = obd
+        z = self.params['D_e_to_l1']
         field2d, x2d = FO.ConvFresnel2D(g, self.x_Start, diam0, z, set_dx=9.9, return_derivs=False)
 
         #apply phase screen due to lens
@@ -574,7 +571,7 @@ class WorkingOpticalModels():
         field2d, x2d = FO.ApplyThinLens2D(field2d, x2d, lens_center, focal_length, return_derivs=False)
 
         #propagate to pyramid tip
-        z = d2pyr + pyr_dist_error  # this is additive here in both transmissive and reflective geometry
+        z = self.params['D_l1_to_pyr'] + pyr_dist_error  # this is additive here in both transmissive and reflective geometry
         diam_pyr = self.params['beam_diameter_at_pyramid']
         if return_derivs is False:
             field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
@@ -635,7 +632,7 @@ class WorkingOpticalModels():
             print("after pyramid face: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
 
         #propagate field to detector
-        z = d_pyr_det + pyr_dist_error # it is added here because we are assuming reflective geometry
+        z = self.params['D_l1_to_detector'] - self.params['D_l1_to_pyr'] + pyr_dist_error # error is added here because we are assuming reflective geometry
         field2d, dfield2d_ , x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=True)
         if return_derivs is not False:
             dx = x2d[1] - x2d[0]
