@@ -57,7 +57,7 @@ class FourierOptics():
         elif set_dx == True:  # use chirp sampling criterion
             dx_new = dx_chirp
         else:  # take dx_new to be value of set_dx
-            if str(type(set_dx)) != "<class 'float'>":
+            if not isinstance(set_dx, float):
                 raise Exception("ConvFresnel1D: set_dx must be a bool or a float.")
             if set_dx <= 0:
                 raise Exception("ConvFresnel1D: numerical value of set_dx must be > 0.")
@@ -110,7 +110,7 @@ class FourierOptics():
     #            is exceeded in the x input array.
     #...dx - sets the resolution to dx (units microns).  Note: the output may differ
     #         slightly from this value
-    # return_derivs - True to return deriv. of output field WRT z
+    # return_derivs - True to return deriv. of output field WRT z (drops piston term)
     def ConvFresnel2D(self, g, x, diam_out, z, index_of_refraction=1,
                       set_dx=True, return_derivs=False):
         if g.shape[0] != x.shape[0]:
@@ -129,7 +129,7 @@ class FourierOptics():
         elif set_dx == True:  # use chirp sampling criterion
             dx_new = dx_chirp
         else:  # take dx_new to be value of set_dx
-            if str(type(set_dx)) != "<class 'float'>":
+            if not isinstance(set_dx, float):
                 raise Exception("ConvFresnel2D: set_dx must be a bool or a float.")
             if set_dx <= 0:
                 raise Exception("ConvFresnel2D: numerical value of set_dx must be > 0.")
@@ -160,7 +160,7 @@ class FourierOptics():
         p = 1/(lam*z)
         if not return_derivs:
             return([p*h, s[ind]])
-        #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted oscillations
+        #dpdz = (-1j/(lam*z*z) + 2*np.pi/(lam*lam*z))*np.exp(2j*np.pi*z/lam)  # includes unwanted piston term
         dpdz = -1/(lam*z*z)
         dkerndz = -1j*np.pi*(sx*sx + sy*sy)*kern/(lam*z*z)
         dhdz = conv(dkerndz, g, mode='same', method='fft')
@@ -420,17 +420,18 @@ class FourierOptics():
 
     #see self.NSidedPyramidHeight for the other parameters
     #reflective (bool) - if True phase change is multiplied by -2 and self.params['indref'] doesn't matter
-    #fix_dx is either False, allowing the field to be resampled according to self.params['max_pyramid phase step'],
+    #set_dx is either False, allowing the field to be resampled according to self.params['max_pyramid phase step'],
     #  or, it is a scalar value specifying dx.  This is useful for finite differencing.
     def ApplyNSidedPyrPhase2D(self, g, x, SlopeDeviations=None, FaceCenterAngleDeviations=None, N=4,
-                              NominalSlope=1., rot0=None, reflective=True, fix_dx=False):
-        if not fix_dx: assert np.isscalar(fix_dx) and fix_dx > 0.
+                              NominalSlope=1., rot0=None, reflective=True, set_dx=False):
+        if set_dx is not False: assert np.isscalar(set_dx) and set_dx > 0.
         if g.shape[0] != x.shape[0]:
-            raise Exception("ApplyPyramidPhaseRamp2D: input field and grid must have same sampling.")
+            print('g.shape = ' , g.shape, ', x.shape = ', x.shape)
+            raise Exception("ApplyNSidedPyrPhase2D: input field and grid must have same sampling.")
         if g.ndim != 2:
-            raise Exception("ApplyPyramidPhaseRamp2D: input field array must be 2D.")
+            raise Exception("ApplyNSidedPyrPhase2D: input field array must be 2D.")
         if g.shape[0] != g.shape[1]:
-            raise Exception("ApplyPyramidPhaseRamp2D: input field array must be square.")
+            raise Exception("ApplyNSidedPyrPhase2D: input field array must be square.")
         assert np.isscalar(NominalSlope) and NominalSlope > 0.
         if SlopeDeviations is None:
             SlopeDeviations = np.zeros((N,))
@@ -445,13 +446,13 @@ class FourierOptics():
         else:
             phase_step = 360*(indref-1)*dx*tslope/lam
 
-        if fix_dx is False:
+        if set_dx is False:
             if np.abs(phase_step) > self.params['max_pyramid_phase_step']:
                 dxnew = self.params['max_pyramid_phase_step']*lam/(360*tslope)
                 [g, x] = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
         else:
-            if not np.isclose(fix_dx, dx):
-                [g, x] = self.ResampleField2D(g, x, fix_dx, kind=self.params['interp_style'])
+            if not np.isclose(set_dx, dx):
+                [g, x] = self.ResampleField2D(g, x, set_dx, kind=self.params['interp_style'])
 
         height = self.NSidedPyramidHeight(x, SlopeDeviations=SlopeDeviations, FaceCenterAngleDeviations=FaceCenterAngleDeviations,
                                           N=N, NominalSlope=NominalSlope, rot0=rot0)
@@ -634,7 +635,7 @@ class FourierOptics():
         nx = int(np.round(diam/dx_new))
         dxnew = diam/nx
         xnew = np.linspace(-diam/2 + dxnew/2, diam/2 - dxnew/2, nx)
-        #interp2d doesn't like complex number.  So stupid.
+        #interp2d doesn't like complex numbers.  So stupid.
         interp_real = interp2d(x, x, np.real(g), kind=kind, fill_value=fill_value)
         interp_imag = interp2d(x, x, np.imag(g), kind=kind, fill_value=fill_value)
         g = interp_real(xnew, xnew) + 1j*interp_imag(xnew, xnew)
