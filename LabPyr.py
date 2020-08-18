@@ -24,7 +24,7 @@ pyrparams = dict()
 pyrparams['beam_diameter'] = 1.e3 # input beam diameter (microns)
 pyrparams['wavelength'] = 0.6328 # wavelength (microns)
 pyrparams['indref'] = 1.5 # pyramid index of refraction
-pyrparams['pyramid_slope_deg'] = 0.25# 10.5  # slope of pyramid faces relative to horizontal (degrees)
+pyrparams['pyramid_slope_deg'] = 0.28# 10.5  # slope of pyramid faces relative to horizontal (degrees)
 pyrparams['pyramid_roofsize'] = 16 # length of one side of square pyramid roof (microns)
 pyrparams['pyramid_height'] = 1.e4 # (microns)  height of pyramid
 pyrparams['n_starting_points'] = 150  # number of resolution elements in initital beam diameter
@@ -539,15 +539,18 @@ class WorkingOpticalModels():
 
         return
 
-    #this models a reflective 3 sided pyramid in an F4 system (requires only 1 lens)
+    #this models a reflective N sided pyramid in an F4 system (requires only 1 lens)
     #g is the complex-valued field to be propagated.  Can be None for a normal plane wave
+    #SlopeDevations (degrees, len=N) is the change from nominal of the slope of each face
+    #FaceCenterAngleDeviations (degrees, len=N) is the change from nominal of the azimuthal separation of the face centers
     #pyr_dist_error (microns) is the error in the distance of the pyramid apex to the focal plane (> 0 means too far away)
-    #   of the lens.  Positive means it's too far away    #SlopeDevations (degrees, len=3) is the change from nominal of the slope of each face
-    #FaceCenterAngleDeviations (degrees, len=3) is the change from nominal of the azimuthal separation of the face centers
-    def PropF4Reflective3SidedPyramid(self, g=None, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0.,
-                                      return_derivs=None, print_stuff=True):
+    #   of the lens.  Positive means it's too far away
+    #N - Number of pyramid faces.
+    #return_derivs  [False | list of desired derivatives]
+    def PropF4ReflectiveNSidedPyramid(self, g=None, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0.,
+                                      N=3, return_derivs=False, print_stuff=True):
         if return_derivs is not False:
-            raise Exception("pyr_dist_error appears in two steps.  Make sure this is done correctly in the derivs.  See reflective pyramid code for procedure.")
+            assert isinstance(return_derivs, list)
         FO = FourierOptics.FourierOptics(pyrparams)
         focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid t
         diam0 = self.params['lens1_fill_diameter']
@@ -576,36 +579,39 @@ class WorkingOpticalModels():
         if return_derivs is False:
             field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
         else:            
-            if pyr_dist_error in return_derivs:
-                field2d, dfield2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
+            if 'pyr_dist' in return_derivs:
+                field2d, dfield2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=True)
                 derivs['pyr_dist'] = dfield2d
             else:
                 field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
+            x2d_old = 1.0*x2d  # deep copy
         if print_stuff:
             print("at pyramid: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x) = " + str(len(x2d)))
 
+
+        x2d_old = 1.0*x2d #  deep copy
         #apply pyramid phase screen to simulate reflection off pyramid glass
         #the columns of pyr_ax are unit vectors of the pyramid axes
-        field2d, x2d = FO.ApplyNSidedPyrPhase2D(field2d, x2d, SlopeDeviations=SlopeDeviations,
-                        FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=3, fix_dx=False,
+        field2d, x2d = FO.ApplyNSidedPyrPhase2D(field2d, x2d_old, SlopeDeviations=SlopeDeviations,
+                        FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, set_dx=True,
                         NominalSlope=nomslope, rot0=None, reflective=True)
         if return_derivs is not False:
             dx = x2d[1] - x2d[0]
             for item in derivs:  #apply Pyramid operator to derivs
-                dfield2d, x2d = FO.ApplyNSidedPyrPhase2D(derivs[item], x2d, SlopeDeviations=SlopeDeviations,
-                        FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=3, fix_dx=dx,
+                dfield2d, crap = FO.ApplyNSidedPyrPhase2D(derivs[item], x2d_old, SlopeDeviations=SlopeDeviations,
+                        FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, set_dx=dx,
                         NominalSlope=nomslope, rot0=None, reflective=True)
                 derivs[item] = dfield2d
             if 'SlopeDeviations' in return_derivs:
                 delta = 0.001  # degrees
-                for k in range(3):
+                for k in range(N):
                     deriv_name = 'SlopeDev_' + str(k)
                     while True:
                         sd = SlopeDeviations
                         sd[k] += delta
-                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d, x2d, SlopeDeviations=sd,
-                            FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=3, NominalSlope=nomslope,
-                            rot0=None, reflective=True, fix_dx=dx)
+                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d, x2d_old, SlopeDeviations=sd,
+                            FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, NominalSlope=nomslope,
+                            rot0=None, reflective=True, set_dx=dx)
                         dfield2d -= field2d
                         if np.max(np.abs(np.angle(dfield2d))) > self.params['max_finite_diff_phase_change_deg']*np.pi/180 :
                             delta /= 10.
@@ -614,14 +620,14 @@ class WorkingOpticalModels():
                     derivs[deriv_name] = dfield2d
             if 'FaceCenterAngleDeviations' in return_derivs:
                 delta = 0.1  # degrees
-                for k in range(3):
+                for k in range(N):
                     deriv_name = 'FaceDev_' + str(k)
                     while True:
                         sd = FaceCenterAngleDeviations
                         sd[k] += delta
-                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d, x2d, SlopeDeviations=SlopeDeviations,
-                            FaceCenterAngleDeviations=sd, N=3, NominalSlope=nomslope,
-                            rot0=None, reflective=True, fix_dx=dx)
+                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d, x2d_old, SlopeDeviations=SlopeDeviations,
+                            FaceCenterAngleDeviations=sd, N=N, NominalSlope=nomslope,
+                            rot0=None, reflective=True, set_dx=dx)
                         dfield2d -= field2d
                         if np.max(np.abs(np.angle(dfield2d))) > self.params['max_finite_diff_phase_change_deg']*np.pi/180 :
                             delta /= 10.
@@ -629,28 +635,30 @@ class WorkingOpticalModels():
                     dfield2d /= delta
                     derivs[deriv_name] = dfield2d
         if print_stuff:
-            print("after pyramid face: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
+            print("after pyramid face phase screen: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
 
         #propagate field to detector
+        x2d_old = x2d
         z = self.params['D_l1_to_detector'] - self.params['D_l1_to_pyr'] + pyr_dist_error # error is added here because we are assuming reflective geometry
-        field2d, dfield2d_ , x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=True)
+        field2d, dfield2d_ , x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=True)            
         if return_derivs is not False:
             dx = x2d[1] - x2d[0]
             for item in derivs:  #apply Pyramid operator to derivs
-                dfield2d, x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=False)
+                dfield2d, crap = FO.ConvFresnel2D(derivs[item], x2d_old, detector_diam, z, set_dx=dx, return_derivs=False)
                 derivs[item] = dfield2d
-            derivs['pyr_dist'] += dfield2d_  # this is b/c ['pyr_dist']  appears twice
-            del dfield2d_
+                if item == 'pyr_dist':
+                    derivs['pyr_dist'] += dfield2d_  # this is b/c ['pyr_dist']  appears twice
+        del dfield2d_
         if print_stuff:
             print("at detector: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x) = " + str(len(x2d)))
 
         #br2d = np.real(np.abs(field2d)); br2d /= np.max(br2d)
         #plt.figure(); plt.imshow(br2d); plt.colorbar(); plt.title('sqrt(intensity)')
-        #height = FO.NSidedPyramidHeight(x2d, SlopeDeviations=SlopeDeviations, FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=3, NominalSlope=nomslope, rot0=None)
+        #height = FO.NSidedPyramidHeight(x2d, SlopeDeviations=SlopeDeviations, FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, NominalSlope=nomslope, rot0=None)
         #plt.figure(); plt.imshow(height); plt.colorbar(); plt.title('pyramid height (microns)');
 
-        if return_derivs is not False:
-            return((field2d, x2d))
+        if return_derivs is False:
+            return({'field': field2d, 'x': x2d})
         else:
             derivs['field'] = field2d
             derivs['x'] = x2d
