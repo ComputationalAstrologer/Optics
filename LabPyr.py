@@ -546,11 +546,15 @@ class WorkingOpticalModels():
     #pyr_dist_error (microns) is the error in the distance of the pyramid apex to the focal plane (> 0 means too far away)
     #   of the lens.  Positive means it's too far away
     #N - Number of pyramid faces.
-    #return_derivs  [False | list of desired derivatives]
+    #return_derivs  [False | list of desired derivatives]  # see code for acceptable options
     def PropF4ReflectiveNSidedPyramid(self, g=None, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0.,
                                       N=3, return_derivs=False, print_stuff=True):
+        deriv_ops = ['pyr_dist', 'face_angle', 'slove_dev']
         if return_derivs is not False:
+            out = dict()  # dict of output
             assert isinstance(return_derivs, list)
+            for item in return_derivs:
+                assert item in deriv_ops
         FO = FourierOptics.FourierOptics(pyrparams)
         focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid t
         diam0 = self.params['lens1_fill_diameter']
@@ -562,8 +566,6 @@ class WorkingOpticalModels():
             g = self.field_Start2D
         else:
             assert g.shape == self.field_Start2D.shape
-        if return_derivs is not None:
-            derivs = dict()
 
         # propagate field to lens
         z = self.params['D_e_to_l1']
@@ -576,40 +578,40 @@ class WorkingOpticalModels():
         #propagate to pyramid tip
         z = self.params['D_l1_to_pyr'] + pyr_dist_error  # this is additive here in both transmissive and reflective geometry
         diam_pyr = self.params['beam_diameter_at_pyramid']
-        if return_derivs is False:
-            field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
-        else:            
+        x2d_old = 1.0*x2d  # deep copy
+        field2d, dfield2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=True)
+        dx = x2d[1] - x2d[0]
+        if return_derivs is not False:
             if 'pyr_dist' in return_derivs:
-                field2d, dfield2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=True)
-                derivs['pyr_dist'] = dfield2d
-            else:
-                field2d, x2d = FO.ConvFresnel2D(field2d, x2d, diam_pyr, z, set_dx=True, return_derivs=False)
-            x2d_old = 1.0*x2d  # deep copy
+                out['pyr_dist'] = dfield2d
+            for item in out:
+                dfield2d, crap =FO.ConvFresnel2D(out[item], x2d_old, diam_pyr, z, set_dx=dx, return_derivs=False)
+                out[item] = dfield2d
         if print_stuff:
             print("at pyramid: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x) = " + str(len(x2d)))
 
-
-        x2d_old = 1.0*x2d #  deep copy
         #apply pyramid phase screen to simulate reflection off pyramid glass
         #the columns of pyr_ax are unit vectors of the pyramid axes
+        x2d_old = 1.0*x2d #  deep copy
+        field2d_old = 1.0*field2d
         field2d, x2d = FO.ApplyNSidedPyrPhase2D(field2d, x2d_old, SlopeDeviations=SlopeDeviations,
                         FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, set_dx=True,
                         NominalSlope=nomslope, rot0=None, reflective=True)
+        dx = x2d[1] - x2d[0]
         if return_derivs is not False:
-            dx = x2d[1] - x2d[0]
-            for item in derivs:  #apply Pyramid operator to derivs
-                dfield2d, crap = FO.ApplyNSidedPyrPhase2D(derivs[item], x2d_old, SlopeDeviations=SlopeDeviations,
+            for item in out:  #apply Pyramid operator to derivs
+                dfield2d, crap = FO.ApplyNSidedPyrPhase2D(out[item], x2d_old, SlopeDeviations=SlopeDeviations,
                         FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, set_dx=dx,
                         NominalSlope=nomslope, rot0=None, reflective=True)
-                derivs[item] = dfield2d
-            if 'SlopeDeviations' in return_derivs:
+                out[item] = dfield2d
+            if 'slope_dev' in return_derivs:
                 delta = 0.001  # degrees
                 for k in range(N):
-                    deriv_name = 'SlopeDev_' + str(k)
+                    deriv_name = 'slope_dev_' + str(k)
                     while True:
                         sd = SlopeDeviations
                         sd[k] += delta
-                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d, x2d_old, SlopeDeviations=sd,
+                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d_old, x2d_old, SlopeDeviations=sd,
                             FaceCenterAngleDeviations=FaceCenterAngleDeviations, N=N, NominalSlope=nomslope,
                             rot0=None, reflective=True, set_dx=dx)
                         dfield2d -= field2d
@@ -617,15 +619,17 @@ class WorkingOpticalModels():
                             delta /= 10.
                         else: break
                     dfield2d /= delta
-                    derivs[deriv_name] = dfield2d
-            if 'FaceCenterAngleDeviations' in return_derivs:
+                    out[deriv_name] = dfield2d
+            if 'face_angle' in return_derivs:
+                if FaceCenterAngleDeviations is None:
+                    FaceCenterAngleDeviations = np.zeros((N,))
                 delta = 0.1  # degrees
                 for k in range(N):
-                    deriv_name = 'FaceDev_' + str(k)
+                    deriv_name = 'Face_dev_' + str(k)
                     while True:
                         sd = FaceCenterAngleDeviations
                         sd[k] += delta
-                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d, x2d_old, SlopeDeviations=SlopeDeviations,
+                        dfield2d, crap = FO.ApplyNSidedPyrPhase2D(field2d_old, x2d_old, SlopeDeviations=SlopeDeviations,
                             FaceCenterAngleDeviations=sd, N=N, NominalSlope=nomslope,
                             rot0=None, reflective=True, set_dx=dx)
                         dfield2d -= field2d
@@ -633,21 +637,21 @@ class WorkingOpticalModels():
                             delta /= 10.
                         else: break
                     dfield2d /= delta
-                    derivs[deriv_name] = dfield2d
+                    out[deriv_name] = dfield2d
         if print_stuff:
             print("after pyramid face phase screen: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x2d) = " + str(len(x2d)))
 
-        #propagate field to detector
+        #propagate field to detector - include pyr_dist_error
         x2d_old = x2d
         z = self.params['D_l1_to_detector'] - self.params['D_l1_to_pyr'] + pyr_dist_error # error is added here because we are assuming reflective geometry
         field2d, dfield2d_ , x2d = FO.ConvFresnel2D(field2d, x2d, detector_diam, z, set_dx=True, return_derivs=True)            
         if return_derivs is not False:
             dx = x2d[1] - x2d[0]
-            for item in derivs:  #apply Pyramid operator to derivs
-                dfield2d, crap = FO.ConvFresnel2D(derivs[item], x2d_old, detector_diam, z, set_dx=dx, return_derivs=False)
-                derivs[item] = dfield2d
+            for item in out:  #apply Pyramid operator to derivs
+                dfield2d, crap = FO.ConvFresnel2D(out[item], x2d_old, detector_diam, z, set_dx=dx, return_derivs=False)
+                out[item] = dfield2d
                 if item == 'pyr_dist':
-                    derivs['pyr_dist'] += dfield2d_  # this is b/c ['pyr_dist']  appears twice
+                    out['pyr_dist'] += dfield2d_  # this is b/c ['pyr_dist']  appears twice
         del dfield2d_
         if print_stuff:
             print("at detector: delta x = " + str(x2d[1] - x2d[0]) + " microns, len(x) = " + str(len(x2d)))
@@ -660,8 +664,8 @@ class WorkingOpticalModels():
         if return_derivs is False:
             return({'field': field2d, 'x': x2d})
         else:
-            derivs['field'] = field2d
-            derivs['x'] = x2d
-            return(derivs)
+            out['field'] = field2d
+            out['x'] = x2d
+            return(out)
 
 
