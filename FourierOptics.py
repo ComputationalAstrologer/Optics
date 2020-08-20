@@ -420,11 +420,12 @@ class FourierOptics():
 
     #see self.NSidedPyramidHeight for the other parameters
     #reflective (bool) - if True phase change is multiplied by -2 and self.params['indref'] doesn't matter
-    #set_dx is either False, allowing the field to be resampled according to self.params['max_pyramid phase step'],
+    #set_dx [True, False, scalar], allowing the field to be resampled according to self.params['max_pyramid phase step'],
     #  or, it is a scalar value specifying dx.  This is useful for finite differencing.
     def ApplyNSidedPyrPhase2D(self, g, x, SlopeDeviations=None, FaceCenterAngleDeviations=None, N=4,
                               NominalSlope=1., rot0=None, reflective=True, set_dx=False):
-        if set_dx is not False: assert np.isscalar(set_dx) and set_dx > 0.
+        if not isinstance(set_dx, bool):
+            assert np.isscalar(set_dx) and set_dx > 0.
         if g.shape[0] != x.shape[0]:
             print('g.shape = ' , g.shape, ', x.shape = ', x.shape)
             raise Exception("ApplyNSidedPyrPhase2D: input field and grid must have same sampling.")
@@ -446,10 +447,12 @@ class FourierOptics():
         else:
             phase_step = 360*(indref-1)*dx*tslope/lam
 
-        if set_dx is False:
-            if np.abs(phase_step) > self.params['max_pyramid_phase_step']:
-                dxnew = self.params['max_pyramid_phase_step']*lam/(360*tslope)
-                [g, x] = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
+        if isinstance(set_dx, bool):
+            if set_dx:  # resample field according to criterion below
+                if not np.isclose(np.abs(phase_step) , self.params['max_pyramid_phase_step']):
+                    dxnew = self.params['max_pyramid_phase_step']*lam/(360*tslope)
+                    [g, x] = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
+            else:  pass # don't resample field
         else:
             if not np.isclose(set_dx, dx):
                 [g, x] = self.ResampleField2D(g, x, set_dx, kind=self.params['interp_style'])
@@ -460,8 +463,7 @@ class FourierOptics():
             ramp = np.exp(4j*np.pi*height/lam)
         else:
             ramp = np.exp(-2j*np.pi*height(indref-1)/lam)
-        g *= ramp
-        return((g, x))
+        return((ramp*g, x))
 
 
 #SlopeDeviations (degrees) is the vector of deviations of the angles relative to the z=0 plane of each face (len=N)
