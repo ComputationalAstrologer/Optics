@@ -539,6 +539,31 @@ class WorkingOpticalModels():
 
         return
 
+    def TestF4ReflectivePyramid(self):
+        FO = FourierOptics.FourierOptics(pyrparams)
+        g = None; x = None
+        derivs = ['pyr_dist', 'azim_dev', 'slope_dev']
+        N = 4
+        nsl = 0.35  # nominal slope in degrees
+        sd = [-.1,0,-.1,0]  # slope deviations in degrees
+        fcad = [0,0,20,0]  # deviations in azimuthal face angles in degrees
+        pde = 2.3  # pyramid distance error microns
+
+
+        height = FO.NSidedPyramidHeight(self.x_Start, SlopeDeviations=sd,
+                    FaceCenterAngleDeviations=fcad, N=N, NominalSlope=nsl, rot0=None)
+
+        s = self.PropF4ReflectiveNSidedPyramid(g,x,SlopeDeviations=sd,FaceCenterAngleDeviations=fcad,
+                 pyr_dist_error=pde, N=N, NominalSlope=nsl, return_derivs=derivs, print_stuff=False)
+
+        plt.figure(); plt.imshow(height);plt.colorbar();plt.title('pyramid height (microns)');
+        for item in s:
+            if item == 'x': continue
+            plt.figure(); plt.imshow(np.abs(s[item]));plt.colorbar(); plt.title(item);
+        
+
+        return(None)
+
     #this models a reflective N sided pyramid in an F4 system (requires only 1 lens)
     #g is the complex-valued field to be propagated.  Can be None for a plane wave in z direction
     #x 1D spatial coordinate across entrace pupil (units microns), centered on zero
@@ -546,10 +571,11 @@ class WorkingOpticalModels():
     #FaceCenterAngleDeviations (degrees, len=N) is the change from nominal of the azimuthal separation of the face centers
     #pyr_dist_error (microns) is the error in the distance of the pyramid apex to the focal plane (> 0 means too far away)
     #   of the lens.  Positive means it's too far away
+    #NominalSlope - (degrees) nominal slope of pyramid faces
     #N - Number of pyramid faces.
     #return_derivs  [False | list of desired derivatives]  # see code for acceptable options
     def PropF4ReflectiveNSidedPyramid(self, g=None, x=None, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0.,
-                                      N=3, return_derivs=False, print_stuff=True):
+                                      N=3, NominalSlope=None, return_derivs=False, print_stuff=True):
         if g is None:
             assert x is None
             g = self.field_Start2D
@@ -558,16 +584,20 @@ class WorkingOpticalModels():
             assert g is None
         else:
             assert x.ndim == 1 and g.ndim ==2
-        deriv_ops = ['pyr_dist', 'azim_dev', 'slove_dev']
+        deriv_ops = ['pyr_dist', 'azim_dev', 'slope_dev']
         if return_derivs is not False:
             out = dict()  # dict of output
             assert isinstance(return_derivs, list)
             for item in return_derivs:
                 assert item in deriv_ops
+        if NominalSlope is None:
+            nomslope = self.params['pyramid_slope_deg']
+        else: 
+            nomslope = NominalSlope
+            assert np.isscalar(N) and nomslope > 0
         FO = FourierOptics.FourierOptics(pyrparams)
         focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid t
         diam0 = self.params['lens1_fill_diameter']
-        nomslope = self.params['pyramid_slope_deg']
         # max angle between beams (approx)
         beta =  2*self.params['pyramid_slope_deg']*np.pi/180
         detector_diam = 6*focal_length*np.tan(beta/2) + self.params['beam_diameter']
