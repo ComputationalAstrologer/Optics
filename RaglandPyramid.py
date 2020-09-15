@@ -8,9 +8,11 @@ Created on Mon Aug 17 16:18:28 2020
 
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+import pickle
 import FourierOptics
-import LabPyr
 import PolygonTools as PT
+import PupilMap as PM
 
 samparams = dict()
 samparams['beam_diameter'] = 0.90625e3 # input beam diameter (microns) - this is 1/8 of 7.25 mm
@@ -39,7 +41,7 @@ samparams['max_pyramid_phase_step'] = 5  # maximum step (degrees) allowed for py
 samparams['max_finite_diff_phase_change_deg'] = 5  # maximum change in phase tolerated in finite difference
 samparams['interp_style'] = 'linear'  # type of 2d interpolator for field resampling
 
-#According to Sam, the entrace pupil is at 
+
 def SamPyr1(g=None, x=None, Reflective=True, params=samparams, plots=True):
     assert Reflective  # this is reflective pyramid WFS
     nsides = 4  # how many sides to the pyramid
@@ -115,10 +117,38 @@ def SamPyr1(g=None, x=None, Reflective=True, params=samparams, plots=True):
 
     #prop to detector plane
     l2_to_d = 50.e3
-    gd, xd = FO.ConvFresnel2D(gl2p, xl2p, 4*mag_tot*bd, l2_to_d, set_dx=8., return_derivs=False)
+    gd, xd = FO.ConvFresnel2D(gl2p, xl2p, 4.4*mag_tot*bd, l2_to_d, set_dx=8., return_derivs=False)
     if plots:
         plt.figure(); plt.imshow(np.abs(gd)); plt.colorbar(); plt.title('at detector');
         plt.figure(); plt.plot(xd,np.abs(gd[len(gd)//2,:]),'bx-'); plt.title('at detector');
 
     
     return(gd,xd)
+
+
+def RunStuff():
+    #load some wavefronts
+    loc = './Wavefronts'
+    fn = 'Atmo_file_number367_4500000Frames_hcipyInfinitePS_ReconMat_2FD_mag4_Strehl67_2020-07-15'
+    fnp = open(os.path.join(loc, fn), 'rb')
+    d = pickle.load(fnp); fnp.close()
+    wf_true = d['AOres'][:, 2:-1]  # true wavefronts. the first two and last one are trash
+    wf_meas = d['WFmeas'][:, 2:-1]  # measured wavefronts
+    nwf = wf_true.shape[1]  # number of measured wavefronts
+
+    Nppix = 50
+    (pmap, ipmap) = PM.PupilMap(N=Nppix, pixrad=Nppix/2, return_inv=True)
+    x = np.linspace(-7.25e3/2, 7.25e3/2, Nppix)
+    hexagon = PT.RegPolygon(np.meshgrid(x, x, indexing='xy'), radius=np.max(x), center=[0,0], rot0=0, N=6)
+
+    l = 135
+    ph = PM.EmbedPupilVec(wf_true[:,l], pmap, Nppix)
+    g = np.exp(1j*ph)
+    g *= hexagon
+    (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=True)
+
+
+
+    return(None)
+    
+    
