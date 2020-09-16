@@ -147,7 +147,29 @@ def RunStuff():
     g *= hexagon
     (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=True)
 
-
+    #build system operator, column-by-column
+    
+    if not os.path.isfile('Sam_Amat_imag.pickle'):
+        A = np.zeros((gd.shape[0]*gd.shape[1], wf_true.shape[0])).astype('complex64')
+        for k in range(wf_true.shape[0]):
+            v = np.zeros((wf_true.shape[0],))
+            v[k] = 1.
+            vp = PM.EmbedPupilVec(v, pmap, Nppix)
+            vp *= hexagon
+            if np.sum(vp) == 0.: continue
+            (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=False)
+            gdr = np.real(gd)
+            gdi = np.imag(gd)
+            A[:,k] = np.float32(gdr.flatten()) + 1j*np.float32(gdi.flatten());
+            print('done with ', k)
+    else:
+        fnr = 'Sam_Amat_real.pickle'
+        fni = 'Sam_Amat_imag.pickle'
+        fp = open(fnr, 'rb')
+        A = np.float32(pickle.load(fp)) + 1j*np.float32(0.);
+        fp.close(); fp = open(fni, 'rb')
+        A += 1j*np.float32(pickle.load(fp))
+        fp.close()
 
     return(None)
     
