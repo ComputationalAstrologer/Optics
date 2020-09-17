@@ -122,7 +122,6 @@ def SamPyr1(g=None, x=None, Reflective=True, params=samparams, plots=True):
         plt.figure(); plt.imshow(np.abs(gd)); plt.colorbar(); plt.title('at detector');
         plt.figure(); plt.plot(xd,np.abs(gd[len(gd)//2,:]),'bx-'); plt.title('at detector');
 
-    
     return(gd,xd)
 
 
@@ -146,9 +145,19 @@ def RunStuff():
     g = np.exp(1j*ph)
     g *= hexagon
     (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=True)
-
-    #build system operator, column-by-column
     
+    #get tip/tilt phasors for pyramid modulation
+    n_mods = 8
+    mod_angles = np.linspace(0, 360*(n_mods-1)/n_mods, n_mods)
+    mod_rad = 2.5
+    mod_phasors = np.zeros((wf_true.shape[0], n_mods)).astype('complex')
+    FO = FourierOptics.FourierOptics(samparams)
+    for k in range(n_mods):
+        phk = FO.TipTiltPhasor(Nppix, mod_angles[k], mod_rad)
+        mod_phasors[:,k] = PM.ExtractPupilVec(phk, ipmap) 
+
+
+    #build system operator, column-by-column 
     if not os.path.isfile('Sam_Amat_imag.pickle'):
         A = np.zeros((gd.shape[0]*gd.shape[1], wf_true.shape[0])).astype('complex64')
         for k in range(wf_true.shape[0]):
