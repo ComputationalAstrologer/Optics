@@ -619,6 +619,24 @@ class FourierOptics():
         gamma = np.sqrt(1 - alpha*alpha - beta*beta)
         return([alpha, beta, gamma])
 
+#   This returns a tip_tilt phasor (square array) in a pupil plane.
+#   Np - the number of pixels across the pupil
+#   angle (degrees) - the modulation angle
+#   amp (lambda/D units) - modulation radius
+    def GetTipTiltPhasor(self, Np, angle_deg, amp=3.):
+        s = np.linspace(-0.5, 0.5, Np)
+        (xx, yy) = np.meshgrid(s,s)
+        ph = np.zeros((Np, Np))
+        v = np.zeros((2,))
+        unit = np.array([np.cos(angle_deg*np.pi/180), np.sin(angle_deg*np.pi/180)])
+        for k in range(Np):
+            for l in range(Np):
+                v[0] = xx[l,k]
+                v[1] = yy[l,k]
+                ph[l,k] = 2*np.pi*amp*v.dot(unit)
+        return( np.exp(1j*ph) )
+
+
     #Resample the field to achieve a target spatial resolution given by dx_new
     #  Returns resampled field and new x
     #g - input field
