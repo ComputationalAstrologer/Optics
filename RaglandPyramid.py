@@ -139,23 +139,7 @@ def RunStuff():
     (pmap, ipmap) = PM.PupilMap(N=Nppix, pixrad=Nppix/2, return_inv=True)
     x = np.linspace(-7.25e3/2, 7.25e3/2, Nppix)
     hexagon = PT.RegPolygon(np.meshgrid(x, x, indexing='xy'), radius=np.max(x), center=[0,0], rot0=0, N=6)
-
-    l = 135
-    ph = PM.EmbedPupilVec(wf_true[:,l], pmap, Nppix)
-    g = np.exp(1j*ph)
-    g *= hexagon
-    (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=True)
-    
-    #get tip/tilt phasors for pyramid modulation
-    n_mods = 8
-    mod_angles = np.linspace(0, 360*(n_mods-1)/n_mods, n_mods)
-    mod_rad = 2.5
-    mod_phasors = np.zeros((wf_true.shape[0], n_mods)).astype('complex')
-    FO = FourierOptics.FourierOptics(samparams)
-    for k in range(n_mods):
-        phk = FO.TipTiltPhasor(Nppix, mod_angles[k], mod_rad)
-        mod_phasors[:,k] = PM.ExtractPupilVec(phk, ipmap) 
-
+    (gd, xd) = SamPyr1(g=hexagon, x=x, Reflective=True, params=samparams, plots=False)
 
     #build system operator, column-by-column 
     if not os.path.isfile('Sam_Amat_imag.pickle'):
@@ -166,7 +150,7 @@ def RunStuff():
             vp = PM.EmbedPupilVec(v, pmap, Nppix)
             vp *= hexagon
             if np.sum(vp) == 0.: continue
-            (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=False)
+            (gd, xd) = SamPyr1(g=vp, x=x, Reflective=True, params=samparams, plots=False)
             gdr = np.real(gd)
             gdi = np.imag(gd)
             A[:,k] = np.float32(gdr.flatten()) + 1j*np.float32(gdi.flatten());
@@ -179,6 +163,41 @@ def RunStuff():
         fp.close(); fp = open(fni, 'rb')
         A += 1j*np.float32(pickle.load(fp))
         fp.close()
+
+    #get tip/tilt phasors for pyramid modulation
+    n_mods = 8
+    mod_angles = np.linspace(0, 360*(n_mods-1)/n_mods, n_mods)
+    mod_rad = 2.5
+    #mod_phasors = np.zeros((wf_true.shape[0], n_mods)).astype('complex')
+    FO = FourierOptics.FourierOptics(samparams)
+    #for k in range(n_mods):
+    #    phk = FO.TipTiltPhasor(Nppix, mod_angles[k], mod_rad)
+    #    mod_phasors[:,k] = PM.ExtractPupilVec(phk, ipmap)
+
+    l = 135
+    if False:
+        ph = np.exp(1j*wf_true[:,l])
+        Im = 0.
+        for k in range(n_mods):
+            ttp = FO.TipTiltPhasor(Nppix, mod_angles[k], mod_rad)
+            ttpv = PM.ExtractPupilVec(ttp, ipmap)
+            gd = A.dot(ttpv*ph)
+            Im += np.real(gd*np.conj(gd))
+        Im = Im.reshape(529,529)/n_mods
+
+    if False:
+        ph = PM.EmbedPupilVec(wf_true[:,l], pmap, Nppix)
+        g = np.exp(1j*ph)
+        g *= hexagon
+        (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=False)
+        Iu = np.real(gd*np.conj(gd))
+        Im = 0.
+        for k in range(n_mods):
+            ph = PM.EmbedPupilVec(wf_true[:,l], pmap, Nppix)
+            g = np.exp(1j*ph)*FO.TipTiltPhasor(Nppix, mod_angles[k], mod_rad)
+            g *= hexagon
+            (gd, xd) = SamPyr1(g=g, x=x, Reflective=True, params=samparams, plots=False)
+            Im += np.real(gd*np.conj(gd))/n_mods
 
     return(None)
     
