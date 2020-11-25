@@ -61,3 +61,22 @@ def PlaneRotationMatrix(theta, units='degrees'):
         s = theta*np.pi/180
         rm = np.array([[np.cos(s), np.sin(s)], [np.sin(-s), np.cos(s)]])
     return(rm)
+
+#This returns square mask array that cuts a circle out of a square
+#square_size - 1D size of square array (pixels)
+#circ_diam - diameter of circle in pixels
+#gtORgeq - boundary condition for circle, 'gt' = '>', 'geq' = '>='
+def CutCircle(square_size, circ_diam, gtORgeq = 'gt'):
+    assert circ_diam <= square_size
+    mask = np.ones((square_size, square_size))
+    s = np.linspace(-1, 1, square_size)
+    x, y = np.meshgrid(s, s, indexing='xy')
+    r = np.sqrt(x*x + y*y)
+    rmax = circ_diam/square_size
+    if gtORgeq == 'gt':  q = np.where(r > rmax)
+    elif gtORgeq == 'geq':  q = np.where(r >= rmax)
+    else:  assert False
+    for k in range(len(q[0])):
+        mask[q[0][k], q[1][k]] = 0.
+    return(mask)
+

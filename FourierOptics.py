@@ -191,7 +191,7 @@ class FourierOptics():
         return([h, dhdc, xnew])
 
     # similar to 1D version, except center must be of length 2
-    def ApplyThinLens2D(self, g, x, center, fl, return_derivs=False):
+    def ApplyThinLens2D(self, g, x, center, fl, set_dx=True, return_derivs=False):
         if g.shape[0] != x.shape[0]:
             raise Exception("ApplyThinLens2D: input field and grid must have same sampling.")
         if g.ndim != 2:
@@ -205,8 +205,22 @@ class FourierOptics():
         lam = self.params['wavelength']
         max_step = self.params['max_lens_step_deg']*np.pi/180
         dx_tol = max_step*lam*fl/(2*np.pi*(diam/2 + np.sqrt(center[0]**2 + center[1]**2)))
-        if dx > dx_tol:  # interpolate onto higher resolution grid
-            [g, x] = self.ResampleField2D(g, x, dx_tol, kind=self.params['interp_style'])
+        if isinstance(set_dx, bool):
+            if set_dx is True:
+                if dx > dx_tol:  # interpolate onto higher resolution grid
+                    [g, x] = self.ResampleField2D(g, x, dx_tol, kind=self.params['interp_style'])
+                else: pass
+            if set_dx is False:
+                if (dx <= dx_tol): pass
+                else: 
+                    print ("ApplyThinLens2D: dx > dx_tol.  dx_tol = ", dx_tol, ", dx = ", dx)
+                    raise Exception()
+        else:  # set_dx not boolean
+            if (set_dx <= dx_tol):
+                [g, x] = self.ResampleField2D(g, x, set_dx, kind=self.params['interp_style'])
+            else:
+                print ("ApplyThinLens2D: set_dx > dx_tol.  dx_tol = ", dx_tol, ", dx = ", dx)
+                raise Exception()
 
         [sx, sy] = np.meshgrid(x, x, indexing='xy')
         sx -= center[0]
@@ -623,7 +637,7 @@ class FourierOptics():
 #   Np - the number of pixels across the pupil
 #   angle (degrees) - the modulation angle
 #   amp (lambda/D units) - modulation radius
-    def GetTipTiltPhasor(self, Np, angle_deg, amp=3.):
+    def TipTiltPhasor(self, Np, angle_deg, amp=3.):
         s = np.linspace(-0.5, 0.5, Np)
         (xx, yy) = np.meshgrid(s,s)
         ph = np.zeros((Np, Np))
