@@ -14,7 +14,7 @@ loc = './Wavefronts'
 
 M = 1976
 
-LOAD = True
+LOAD = False
 if LOAD:
     filecount = -1
     for fn in os.listdir(loc):
@@ -28,12 +28,12 @@ if LOAD:
         else:
             wft = np.hstack((wft, d['AOres'][ :, 2:-1]))
             wfm = np.hstack((wfm, d['AOres'][ :, 2:-1]))
+    del wfm
+    wft = wft.T
 
-del wfm
-wft = wft.T
 TIME_BIN = True
 if TIME_BIN:
-    bs = 50  # bin size
+    bs = 200  # bin size
     nbins = wft.shape[0]//bs
     wfb = np.zeros((nbins, bs, M))
     mu = np.zeros((nbins, M))
@@ -52,7 +52,7 @@ if TIME_BIN:
     if ADTEST:
         npix = 3
         #pix = np.random.randint(0,M,npix)
-        pix = [1379, 1105,  659]
+        pix = [1517, 1216,  0]
         adscore = np.zeros((nbins,npix))
         for kb in range(nbins):
             if np.mod(kb,50) == 0:
