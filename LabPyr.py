@@ -567,6 +567,7 @@ class WorkingOpticalModels():
     #this models a reflective N sided pyramid in an F4 system (requires only 1 lens)
     #g is the complex-valued field to be propagated.  Can be None for a plane wave in z direction
     #x 1D spatial coordinate across entrace pupil (units microns), centered on zero
+    #  must be None if x is None
     #SlopeDevations (degrees, len=N) is the change from nominal of the slope of each face
     #FaceCenterAngleDeviations (degrees, len=N) is the change from nominal of the azimuthal separation of the face centers
     #pyr_dist_error (microns) is the error in the distance of the pyramid apex to the focal plane (> 0 means too far away)
