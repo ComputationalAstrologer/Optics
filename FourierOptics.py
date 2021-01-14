@@ -52,10 +52,11 @@ class FourierOptics():
         dx, diam = self.GetDxAndDiam(x)
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
-        if set_dx == False:
-            dx_new = dx
-        elif set_dx == True:  # use chirp sampling criterion
-            dx_new = dx_chirp
+        if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
+            if set_dx == False:
+                dx_new = dx
+            else:  # use chirp sampling criterion
+                dx_new = dx_chirp
         else:  # take dx_new to be value of set_dx
             if not isinstance(set_dx, float):
                 raise Exception("ConvFresnel1D: set_dx must be a bool or a float.")
@@ -124,10 +125,11 @@ class FourierOptics():
         dx, diam = self.GetDxAndDiam(x)
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
-        if set_dx == False:
-            dx_new = dx
-        elif set_dx == True:  # use chirp sampling criterion
-            dx_new = dx_chirp
+        if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
+            if set_dx == False:
+                dx_new = dx
+            else:  # use chirp sampling criterion
+                dx_new = dx_chirp
         else:  # take dx_new to be value of set_dx
             if not isinstance(set_dx, float):
                 raise Exception("ConvFresnel2D: set_dx must be a bool or a float.")

@@ -43,7 +43,7 @@ def PupilMap(N=50, pixrad=25, return_inv=False):
 #N - output array is N-by-N
 def EmbedPupilVec(pvec, pmap, N):
     assert pvec.ndim == 1
-    square_array = np.zeros((N,N))
+    square_array = np.zeros((N,N)).astype('complex')
     for k in range(len(pvec)):
         square_array[pmap[k]] = pvec[k]
     return(square_array)
