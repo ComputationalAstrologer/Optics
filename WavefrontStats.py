@@ -33,7 +33,7 @@ if LOAD:
 
 TIME_BIN = True
 if TIME_BIN:
-    bs = 200  # bin size
+    bs = 100  # bin size
     nbins = wft.shape[0]//bs
     wfb = np.zeros((nbins, bs, M))
     mu = np.zeros((nbins, M))

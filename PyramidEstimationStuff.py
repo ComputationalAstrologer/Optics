@@ -9,17 +9,18 @@ Created on Wed Jan 13 10:23:51 2021
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+from scipy.signal import decimate as dc
 import PupilMap as PM
 import LabPyr as LP
 
 
 szp = 51  # linear size of pupil plane
-prad = 25  # radius of entrance pupil within pupil plane
+prad = 15  # radius of entrance pupil within pupil plane
 
 parms = dict()
 parms['beam_diameter'] = 1.e3 # input beam diameter (microns)
 parms['wavelength'] = 0.6328 # wavelength (microns)
-parms['pyramid_slope_deg'] = 0.6 # slope of pyramid faces relative to horizontal (degrees)
+parms['pyramid_slope_deg'] = 0.4 # slope of pyramid faces relative to horizontal (degrees)
 parms['n_starting_points'] = szp  # number of resolution elements in initital beam diameter
 parms['f1'] = 40.e3 # focal length of lens #1 (focuses light on pyramid tip)
 parms['D_e_to_l1'] = 2*parms['f1'] # nominal distance from entrance pupil to lens1 (microns)
@@ -43,12 +44,49 @@ WOM = LP.WorkingOpticalModels(params=parms)
 pmap, ipmap = PM.PupilMap(N=szp, pixrad=prad, return_inv=True)
 nppix = len(pmap)
 
-#set up field
-amp = np.ones((nppix,))
-ph = np.zeros((nppix,))
-u = amp*np.exp(1j*ph)
-xu = np.linspace(- parms['beam_diameter']/2, parms['beam_diameter']/2, szp)
-uu =  PM.EmbedPupilVec(u, pmap, szp)
+MakeSysmat = False
+if MakeSysmat:
+    #create the system matrix for the WFS
+    sysmat = np.zeros((175*175, nppix)).astype('complex')
+    lng = 350
+    xu = np.linspace(- parms['beam_diameter']/2, parms['beam_diameter']/2, szp)
+    for k in range(nppix):
+        if np.mod(k, 50) == 0: print(k, " of 709")
+        #set up field
+        u = np.zeros((nppix,)).astype('complex')
+        u[k] = 1.0 
+        uu =  PM.EmbedPupilVec(u, pmap, szp)
+    
+        result = WOM.PropF4ReflectiveNSidedPyramid(g=uu, x=xu, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0.,
+                                          N=3, NominalSlope=None, return_derivs=False, print_stuff=False)
+        df = result['field'][45:45+lng, 75:75+lng]
+        #make it smaller.  more filtering destroys the phase information
+        dfr = dc(df, 2, ftype='fir', axis=0, zero_phase=True)
+        dfr = dc(dfr, 2, ftype='fir', axis=1, zero_phase=True)
+        dfr /= 2.e-6
+        sysmat[:,k] = dfr.reshape(175**2,)
+    print('sysmat is done.')
 
-result = WOM.PropF4ReflectiveNSidedPyramid(g=uu, x=xu, SlopeDeviations=None, FaceCenterAngleDeviations=[60,60,60], pyr_dist_error=0.,
-                                      N=3, NominalSlope=None, return_derivs=False, print_stuff=True)
+LoadSysmat = True
+if LoadSysmat:
+    fn = 'Pickles/PyWFSsysmat3sides709_175x175.pickle'
+    fid = open(fn, 'rb')
+    sysmat = pickle.load(fid); fid.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

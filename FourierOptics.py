@@ -437,6 +437,7 @@ class FourierOptics():
     #reflective (bool) - if True phase change is multiplied by -2 and self.params['indref'] doesn't matter
     #set_dx [True, False, scalar], allowing the field to be resampled according to self.params['max_pyramid phase step'],
     #  or, it is a scalar value specifying dx.  This is useful for finite differencing.
+    #Field is only resampled if the initial grid does not have enough resolution to resolve the phase step
     def ApplyNSidedPyrPhase2D(self, g, x, SlopeDeviations=None, FaceCenterAngleDeviations=None, N=4,
                               NominalSlope=1., rot0=None, reflective=True, set_dx=False):
         if not isinstance(set_dx, bool):
@@ -454,17 +455,17 @@ class FourierOptics():
         SlopeDeviations = np.array(SlopeDeviations)
         assert SlopeDeviations.shape == (N,)
         lam = self.params['wavelength']
-        indref = self.params['indref']
         tslope = np.tan(np.max(NominalSlope + SlopeDeviations)*np.pi/180)
         dx, diam = self.GetDxAndDiam(x)
         if reflective:
             phase_step = 2*360*dx*tslope/lam
         else:
+            indref = self.params['indref']
             phase_step = 360*(indref-1)*dx*tslope/lam
 
         if isinstance(set_dx, bool):
             if set_dx:  # resample field according to criterion below
-                if not np.isclose(np.abs(phase_step) , self.params['max_pyramid_phase_step']):
+                if phase_step > self.params['max_pyramid_phase_step']:
                     dxnew = self.params['max_pyramid_phase_step']*lam/(360*tslope)
                     [g, x] = self.ResampleField2D(g, x, dxnew, kind=self.params['interp_style'])
             else:  pass # don't resample field

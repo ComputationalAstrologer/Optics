@@ -34,7 +34,7 @@ samparams['f2'] = None # focal length of lens #2
 samparams['diam_lens2'] =  None # effective diameter of lens2 (set by a stop)
 samparams['D_l2_to_detector'] = None # distrance from lens2 to detector
 samparams['detector_width'] = None # width of detector
-samparams['max_chirp_step_deg'] = 90  # maximum allowed value (degrees) in chirp step for Fresnel prop
+samparams['max_chirp_step_deg'] = 180.  # maximum allowed value (degrees) in chirp step for Fresnel prop
 samparams['max_lens_step_deg'] = 20 # maximum step size allowed for lens phase screen
 samparams['max_plane_step_deg'] = 20  # (degrees) maximum phase step allowed for planar phase screen
 samparams['max_pyramid_phase_step'] = 5  # maximum step (degrees) allowed for pyramid phase ramp
@@ -106,7 +106,7 @@ def SamPyr1(g=None, x=None, Reflective=True, params=samparams, plots=True):
 
     p_to_l2 = 20.45e3
     diam_l2 = 2.8e3  # beam diam at lens2
-    gl2, xl2 = FO.ConvFresnel2D(gtp, xtp, diam_l2 , p_to_l2, set_dx=6., return_derivs=False)
+    gl2, xl2 = FO.ConvFresnel2D(gtp, xtp, diam_l2 , p_to_l2, set_dx=True, return_derivs=False)
     if plots:
         plt.figure(); plt.imshow(np.abs(gl2)); plt.colorbar(); plt.title('at lens2');
         plt.figure(); plt.plot(xl2,np.abs(gl2[len(gl2)//2,:]),'bx-'); plt.title('at lens2');
@@ -116,14 +116,56 @@ def SamPyr1(g=None, x=None, Reflective=True, params=samparams, plots=True):
     gl2p, xl2p = FO.ApplyThinLens2D(gl2, xl2, [0,0], f2, return_derivs=False)
 
     #prop to detector plane
-    l2_to_d = 50.e3
-    gd, xd = FO.ConvFresnel2D(gl2p, xl2p, 4.4*mag_tot*bd, l2_to_d, set_dx=8., return_derivs=False)
+    l2_to_d = 50.e3   #dx = 12 was good with 90 chirp step
+    gd, xd = FO.ConvFresnel2D(gl2p, xl2p, 4.4*mag_tot*bd, l2_to_d, set_dx=True, return_derivs=False)
     if plots:
         plt.figure(); plt.imshow(np.abs(gd)); plt.colorbar(); plt.title('at detector');
         plt.figure(); plt.plot(xd,np.abs(gd[len(gd)//2,:]),'bx-'); plt.title('at detector');
+        print('at detector: dx = ', xd[1] - xd[0], ' microns, field size = ' , gd.shape)
 
     return(gd,xd)
 
+
+#This either loads the pyramid system matrix from a pickle
+#filename (including path)- look for it or create it.
+#create - if True create the pickle containing the system matrix
+#           False look for and load the pickle
+def SamMatrix(filename, create=False):
+    if not create:
+        if not os.path.exists(filename):
+            print('file: ', filename, ' not found.')
+        fp = open(filename, 'rb')
+        A = np.complex64(pickle.load(fp)); fp.close();
+        return(A)
+
+    if os.path.exists(filename):
+        print('file: ', filename, 'already exists. Returning None.')
+        return(None)
+
+    #Make the operator and save it as a pickle
+    wf_size = 1976  # number of pupil pixels
+    Nppix = 50
+    (pmap, ipmap) = PM.PupilMap(N=Nppix, pixrad=Nppix/2, return_inv=True)
+    x = np.linspace(-7.25e3/2, 7.25e3/2, Nppix)
+    hexagon = PT.RegPolygon(np.meshgrid(x, x, indexing='xy'), radius=np.max(x), center=[0,0], rot0=0, N=6)
+    (gd, xd) = SamPyr1(g=hexagon, x=x, Reflective=True, params=samparams, plots=False)
+    A = np.zeros((gd.shape[0]*gd.shape[1], wf_size)).astype('complex64')
+    for k in range(wf_size):
+        v = np.zeros((wf_size,))
+        v[k] = 1.
+        vp = PM.EmbedPupilVec(v, pmap, Nppix)
+        vp *= hexagon
+        if np.sum(vp) == 0.: continue
+        (gd, xd) = SamPyr1(g=vp, x=x, Reflective=True, params=samparams, plots=False)
+        gdr = np.real(gd)
+        gdi = np.imag(gd)
+        A[:,k] = np.float32(gdr.flatten()) + 1j*np.float32(gdi.flatten());
+        if np.mod(k,20) == 0:
+            print('Done with ', k, ' out of', wf_size)
+
+    fp = open(filename, 'wb')
+    pickle.dump(A, fp); fp.close()
+    return(A)
 
 def RunStuff():
     #load some wavefronts
@@ -141,28 +183,6 @@ def RunStuff():
     hexagon = PT.RegPolygon(np.meshgrid(x, x, indexing='xy'), radius=np.max(x), center=[0,0], rot0=0, N=6)
     (gd, xd) = SamPyr1(g=hexagon, x=x, Reflective=True, params=samparams, plots=False)
 
-    #build system operator, column-by-column 
-    if not os.path.isfile('Sam_Amat_imag.pickle'):
-        A = np.zeros((gd.shape[0]*gd.shape[1], wf_true.shape[0])).astype('complex64')
-        for k in range(wf_true.shape[0]):
-            v = np.zeros((wf_true.shape[0],))
-            v[k] = 1.
-            vp = PM.EmbedPupilVec(v, pmap, Nppix)
-            vp *= hexagon
-            if np.sum(vp) == 0.: continue
-            (gd, xd) = SamPyr1(g=vp, x=x, Reflective=True, params=samparams, plots=False)
-            gdr = np.real(gd)
-            gdi = np.imag(gd)
-            A[:,k] = np.float32(gdr.flatten()) + 1j*np.float32(gdi.flatten());
-            print('done with ', k)
-    else:
-        fnr = 'Sam_Amat_real.pickle'
-        fni = 'Sam_Amat_imag.pickle'
-        fp = open(fnr, 'rb')
-        A = np.float32(pickle.load(fp)) + 1j*np.float32(0.);
-        fp.close(); fp = open(fni, 'rb')
-        A += 1j*np.float32(pickle.load(fp))
-        fp.close()
 
     #get tip/tilt phasors for pyramid modulation
     n_mods = 8
