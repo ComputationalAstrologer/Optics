@@ -596,7 +596,7 @@ class WorkingOpticalModels():
         else: 
             nomslope = NominalSlope
             assert np.isscalar(N) and nomslope > 0
-        FO = FourierOptics.FourierOptics(pyrparams)
+        FO = FourierOptics.FourierOptics(self.params)
         focal_length = self.params['f1'] # focal length of lens #1 (focuses light on pyramid t
         diam0 = self.params['lens1_fill_diameter']
         # max angle between beams (approx)
@@ -607,7 +607,7 @@ class WorkingOpticalModels():
 
         # propagate field to lens
         z = self.params['D_e_to_l1']
-        field2d, x = FO.ConvFresnel2D(g, x, diam0, z, set_dx=9.9, return_derivs=False)
+        field2d, x = FO.ConvFresnel2D(g, x, diam0, z, set_dx=True, return_derivs=False)
 
         #apply phase screen due to lens
         lens_center = [0, 0]
@@ -617,6 +617,7 @@ class WorkingOpticalModels():
         z = self.params['D_l1_to_pyr'] + pyr_dist_error  # this is additive here in both transmissive and reflective geometry
         diam_pyr = self.params['beam_diameter_at_pyramid']
         x_old = 1.0*x  # deep copy
+        field2d_old = 1.0*field2d  # deep copy
         field2d, dfield2d, x = FO.ConvFresnel2D(field2d, x, diam_pyr, z, set_dx=True, return_derivs=True)
         dx = x[1] - x[0]
         if return_derivs is not False:
@@ -631,14 +632,14 @@ class WorkingOpticalModels():
 
         #apply pyramid phase screen to simulate reflection off pyramid glass
         #the columns of pyr_ax are unit vectors of the pyramid axes
-        x_old = 1.0*x #  deep copy
-        field2d_old = 1.0*field2d
+        x_old = 1.0*x #  deep copy 
+        field2d_old = 1.0*field2d # deep copy
         field2d, x = FO.ApplyNSidedPyrPhase2D(field2d, x, SlopeDeviations=sld,
                         FaceCenterAngleDeviations=fca, N=N, set_dx=True,
                         NominalSlope=nomslope, rot0=None, reflective=True)
         dx = x[1] - x[0]
-        maxabsfield = np.max(np.abs(field2d))
         if return_derivs is not False:
+            maxabsfield = np.max(np.abs(field2d))
             for item in out:  #apply Pyramid operator to derivs
                 dfield2d, crap = FO.ApplyNSidedPyrPhase2D(out[item], x_old, SlopeDeviations=sld,
                         FaceCenterAngleDeviations=fca, N=N, set_dx=dx,
