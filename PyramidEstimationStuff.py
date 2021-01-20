@@ -184,7 +184,7 @@ def PropF4(u_start, x_start, params=parms, diagnostics=False):
 MakeSysmatF4 = True
 if MakeSysmatF4:
     u = np.zeros((nppix,)).astype('complex')
-    u[k] = 1.0 
+    k=0; u[k] = 1.0 
     uu =  PM.EmbedPupilVec(u, pmap, szp)
     xu = np.linspace(- parms['beam_diameter']/2, parms['beam_diameter']/2, szp)
     result = PropF4(uu, xu, params=parms, diagnostics=False)
