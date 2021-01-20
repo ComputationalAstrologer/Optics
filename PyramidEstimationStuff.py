@@ -25,7 +25,7 @@ parms['pyramid_slope_deg'] = 0.4 # slope of pyramid faces relative to horizontal
 parms['n_starting_points'] = szp  # number of resolution elements in initital beam diameter
 parms['f1'] = 40.e3 # focal length of lens #1 (focuses light on pyramid tip)
 parms['D_e_to_l1'] = 2*parms['f1'] # nominal distance from entrance pupil to lens1 (microns)
-parms['lens1_fill_diameter'] = parms['beam_diameter']*4  #  computational beam width at lens#1.  This matters!
+parms['lens1_fill_diameter'] = parms['beam_diameter']*2  #  computational beam width at lens#1.  This matters!
 parms['D_l1_to_pyr'] = parms['f1'] # nominal distance from lens1 to pyramid tip
 parms['D_l1_to_detector'] = 2*parms['f1']  # distance from lens to detector in 4f system
 parms['apex_diam'] = 20 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
@@ -180,12 +180,16 @@ def PropF4(u_start, x_start, params=parms, diagnostics=False):
 
         return({'x': x2d, 'field': field2d})
 
-MakeSysmatF4 = False
+
+MakeSysmatF4 = True
 if MakeSysmatF4:
-    #create the system matrix for the WFS
-    nv = 297
-    sysmat = np.zeros((nv*nv, nppix)).astype('complex')
+    u = np.zeros((nppix,)).astype('complex')
+    u[k] = 1.0 
+    uu =  PM.EmbedPupilVec(u, pmap, szp)
     xu = np.linspace(- parms['beam_diameter']/2, parms['beam_diameter']/2, szp)
+    result = PropF4(uu, xu, params=parms, diagnostics=False)
+    nv = result['x'].shape[0]
+    sysmat = np.zeros((nv*nv, nppix)).astype('complex')
     for k in range(nppix):
         if np.mod(k, 50) == 0: print(k, " of 709")
         #set up field
