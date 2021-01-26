@@ -25,10 +25,10 @@ parms['pyramid_slope_deg'] = 0.4 # slope of pyramid faces relative to horizontal
 parms['n_starting_points'] = szp  # number of resolution elements in initital beam diameter
 parms['f1'] = 40.e3 # focal length of lens #1 (focuses light on pyramid tip)
 parms['D_e_to_l1'] = 2*parms['f1'] # nominal distance from entrance pupil to lens1 (microns)
-parms['lens1_fill_diameter'] = parms['beam_diameter']*2  #  computational beam width at lens#1.  This matters!
+parms['lens1_fill_diameter'] = parms['beam_diameter']*4  #  computational beam width at lens#1.  This matters!
 parms['D_l1_to_pyr'] = parms['f1'] # nominal distance from lens1 to pyramid tip
 parms['D_l1_to_detector'] = 2*parms['f1']  # distance from lens to detector in 4f system
-parms['apex_diam'] = 20 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
+parms['apex_diam'] = 40 # diameter of focal spot at pyramid apex in units of lambda_over_D (set by stop)
 parms['beam_diameter_at_pyramid'] = parms['apex_diam']*parms['f1']*parms['wavelength']/parms['beam_diameter']
 parms['detector_width'] = None # width of detector
 parms['max_chirp_step_deg'] = 30  # maximum allowed value (degrees) in chirp step for Fresnel prop
@@ -92,11 +92,11 @@ def FullJacobian(sm, lpt=None, rtype='PhasePixel'):
 pmap, ipmap = PM.PupilMap(N=szp, pixrad=prad, return_inv=True)
 nppix = len(pmap)
 
-MakeSysmat = False
-if MakeSysmat:
+MakeSysmatPyr = False
+if MakeSysmatPyr:
     #create the system matrix for the WFS
-    sysmat = np.zeros((175*175, nppix)).astype('complex')
-    lng = 350
+    nx = 240
+    sysmat = np.zeros((nx*nx, nppix)).astype('complex')
     xu = np.linspace(- parms['beam_diameter']/2, parms['beam_diameter']/2, szp)
     for k in range(nppix):
         if np.mod(k, 50) == 0: print(k, " of 709")
@@ -104,15 +104,16 @@ if MakeSysmat:
         u = np.zeros((nppix,)).astype('complex')
         u[k] = 1.0 
         uu =  PM.EmbedPupilVec(u, pmap, szp)
-    
-        result = WOM.PropF4ReflectiveNSidedPyramid(g=uu, x=xu, SlopeDeviations=None, FaceCenterAngleDeviations=None, pyr_dist_error=0.,
-                                          N=4, NominalSlope=None, return_derivs=False, print_stuff=False)
-        df = result['field'][45:45+lng, 75:75+lng]
+
+        result = WOM.PropF4ReflectiveNSidedPyramid(g=uu, x=xu, SlopeDeviations=None, FaceCenterAngleDeviations=[30,30,30], pyr_dist_error=0.,
+                                          N=3, NominalSlope=None, return_derivs=False, print_stuff=False)
+
+        df = result['field']
         #make it smaller.  more filtering destroys the phase information
-        dfr = dc(df, 2, ftype='fir', axis=0, zero_phase=True)
-        dfr = dc(dfr, 2, ftype='fir', axis=1, zero_phase=True)
-        dfr /= 2.e-6
-        sysmat[:,k] = dfr.reshape(175**2,)
+        dfr = dc(df, 8, ftype='fir', axis=0, zero_phase=True)
+        dfr = dc(dfr, 8, ftype='fir', axis=1, zero_phase=True)
+        dfr = dfr[23:23+240,280-240:280]
+        sysmat[:,k] = dfr.reshape(nx**2,)
     print('sysmat is done.')
 
 LoadSysmat = False
@@ -181,7 +182,7 @@ def PropF4(u_start, x_start, params=parms, diagnostics=False):
         return({'x': x2d, 'field': field2d})
 
 
-MakeSysmatF4 = True
+MakeSysmatF4 = False
 if MakeSysmatF4:
     u = np.zeros((nppix,)).astype('complex')
     k=0; u[k] = 1.0 
@@ -199,4 +200,3 @@ if MakeSysmatF4:
         result = PropF4(uu, xu, params=parms, diagnostics=False)
         sysmat[:,k] = result['field'].reshape(nv*nv,)
     print('sysmat is done.')
-
