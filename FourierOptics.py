@@ -50,13 +50,14 @@ class FourierOptics():
             raise Exception("Input field and grid must have same dimensions.")
         lam = self.params['wavelength']/index_of_refraction
         dx, diam = self.GetDxAndDiam(x)
+        dx_new = dx  # this will probably change
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
         if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
-            if set_dx == False:
-                dx_new = dx
+            if set_dx == False: pass
             else:  # use chirp sampling criterion
-                dx_new = dx_chirp
+                if dx_chirp < dx:
+                    dx_new = dx_chirp
         else:  # take dx_new to be value of set_dx
             if not isinstance(set_dx, float):
                 raise Exception("ConvFresnel1D: set_dx must be a bool or a float.")
@@ -64,7 +65,7 @@ class FourierOptics():
                 raise Exception("ConvFresnel1D: numerical value of set_dx must be > 0.")
             dx_new = set_dx
 
-        if dx != dx_new:  # interpolate g onto a grid with spacing of (approx) dx_new
+        if not np.isclose(dx, dx_new):  # interpolate g onto a grid with spacing of (approx) dx_new
             [g, x] = self.ResampleField1D(g, x, dx_new)
             dx = x[1] - x[0]
 
@@ -95,6 +96,48 @@ class FourierOptics():
         dhdz = dhdz[indices_out]
         return([p*h, dpdz*h + p*dhdz, s])
 
+
+    #This is an alternative to ConvFresnel1D.  Instead of using the quadaratic (paraxial)
+    #  approximation of r, the full Huygens-Fresnel integral over the aperture is
+    #  treated directly (see Intro to Fourier Optics eq. 4-9).  Note that this cannot
+    #  be treated with a convolution integral.  This is designed to work when the quadratic
+    #  approximation breaks down.
+    def HuygensFresnel1D(self, g, x, diam_out, z, index_of_refraction=1,
+                      set_dx=True):
+        if g.shape != x.shape:
+            raise Exception("Input field and grid must have same dimensions.")
+        lam = self.params['wavelength']/index_of_refraction 
+        dx, diam = self.GetDxAndDiam(x)
+        dx_new = dx  # this will probably change
+        dPhiTol_deg = self.params['max_chirp_step_deg']
+        dx_chirp = (dPhiTol_deg/45.)*lam*np.sqrt(z*z + (0.5*diam + 0.5*diam_out)**2)/(diam + diam_out)  # sampling criterion
+        if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
+            if set_dx == False: pass
+            else:  # use chirp sampling criterion
+                if dx_chirp < dx:
+                    dx_new = dx_chirp
+        else:  # take dx_new to be value of set_dx
+            if not isinstance(set_dx, float):
+                raise Exception("HuygensFresnel1D: set_dx must be a bool or a float.")
+            if set_dx <= 0:
+                raise Exception("HuygensFresnel1D: numerical value of set_dx must be > 0.")
+            dx_new = set_dx
+
+        nxnew = np.round(diam_out/dx_new).astype('int')
+        xnew = np.linspace(-diam_out/2., diam_out/2., nxnew)
+        f = np.zeros((nxnew,)).astype('complex')  #new field
+        for k1 in range(nxnew):
+            for k2 in range(len(x)):
+                rr = np.sqrt(z*z + (xnew[k1] - x[k2])**2)
+                #the simple form below leads to unwanted periodicity (it acts like DFT)
+                #r2 = z*z + (xnew[k1] - x[k2])**2
+                #f[k1] += g[k2]*(-1j*z/(r2*lam))*np.exp(2j*np.pi*(np.sqrt(r2)-z)/lam)  # subtract z from r to remove piston phase
+                #instead, it is better to integrate over the source pixel
+                stuff = 2.*np.sin( (xnew[k1] - x[k2])*np.pi*dx/(rr*lam) )*z/( rr*np.pi*(xnew[k1]-x[k2]) )
+                f[k1] += g[k2]*np.exp(2j*np.pi*(rr-z)/lam)*stuff
+        return([f,xnew])
+
+
     #2D Fresenel prop using convolution in the spatial domain
     # g - matrix of complex-valued field in the inital plane
     # x - vector of 1D coordinates in initial plane, corresponding to bin center locaitons
@@ -123,13 +166,14 @@ class FourierOptics():
 
         lam = self.params['wavelength']/index_of_refraction
         dx, diam = self.GetDxAndDiam(x)
+        dx_new = dx  # this will probably change
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/180)*lam*z/(diam + diam_out)  # sampling criterion for chirp (factors of pi cancel)
         if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
-            if set_dx == False:
-                dx_new = dx
+            if set_dx == False:  pass
             else:  # use chirp sampling criterion
-                dx_new = dx_chirp
+                if dx < dx_chirp:
+                    dx_new = dx_chirp
         else:  # take dx_new to be value of set_dx
             if not isinstance(set_dx, float):
                 raise Exception("ConvFresnel2D: set_dx must be a bool or a float.")
