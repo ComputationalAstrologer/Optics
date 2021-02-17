@@ -100,7 +100,7 @@ class FourierOptics():
     #This is an alternative to ConvFresnel1D.  Instead of using the quadaratic (paraxial)
     #  approximation of r, the full Huygens-Fresnel integral over the aperture is
     #  treated directly (see Intro to Fourier Optics eq. 4-9).  Note that this cannot
-    #  be treated with a convolution integral.  This is designed to work when the quadratic
+    #  be treated with a convolution integral.  This is designed to work when the paraxial
     #  approximation breaks down.
     def HuygensFresnel1D(self, g, x, diam_out, z, index_of_refraction=1,
                       set_dx=True):
@@ -109,10 +109,13 @@ class FourierOptics():
         lam = self.params['wavelength']/index_of_refraction 
         dx, diam = self.GetDxAndDiam(x)
         dx_new = dx  # this will probably change
+        xnew = None
         dPhiTol_deg = self.params['max_chirp_step_deg']
         dx_chirp = (dPhiTol_deg/45.)*lam*np.sqrt(z*z + (0.5*diam + 0.5*diam_out)**2)/(diam + diam_out)  # sampling criterion
         if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
-            if set_dx == False: pass
+            if set_dx == False:
+                xnew = x
+                nxnew = len(x)
             else:  # use chirp sampling criterion
                 if dx_chirp < dx:
                     dx_new = dx_chirp
@@ -123,20 +126,80 @@ class FourierOptics():
                 raise Exception("HuygensFresnel1D: numerical value of set_dx must be > 0.")
             dx_new = set_dx
 
-        nxnew = np.round(diam_out/dx_new).astype('int')
-        xnew = np.linspace(-diam_out/2., diam_out/2., nxnew)
+        if xnew is None:
+            nxnew = np.round(diam_out/dx_new).astype('int')
+            xnew = np.linspace(-diam_out/2., diam_out/2., nxnew)
         f = np.zeros((nxnew,)).astype('complex')  #new field
         for k1 in range(nxnew):
             for k2 in range(len(x)):
-                rr = np.sqrt(z*z + (xnew[k1] - x[k2])**2)
+                deltax = xnew[k1] - x[k2]
+                if np.abs(deltax) < lam/10.: deltax = lam/10.  # small negative values are also mapped to lam/10
+                rr = z*z + deltax**2
+                r = np.sqrt(rr)
                 #the simple form below leads to unwanted periodicity (it acts like DFT)
-                #r2 = z*z + (xnew[k1] - x[k2])**2
-                #f[k1] += g[k2]*(-1j*z/(r2*lam))*np.exp(2j*np.pi*(np.sqrt(r2)-z)/lam)  # subtract z from r to remove piston phase
+                #f[k1] += g[k2]*(-1j*z/(rr*lam))*np.exp(2j*np.pi*(r-z)/lam)  # subtract z from r to remove piston phase
                 #instead, it is better to integrate over the source pixel
-                stuff = 2.*np.sin( (xnew[k1] - x[k2])*np.pi*dx/(rr*lam) )*z/( rr*np.pi*(xnew[k1]-x[k2]) )
-                f[k1] += g[k2]*np.exp(2j*np.pi*(rr-z)/lam)*stuff
+                q = (-z/np.pi)*(r/deltax)*np.sin( np.pi*deltax*dx/(lam*r) )
+                f[k1] += q*(g[k2]/rr)*np.exp( 2j*np.pi(r - z)/lam )
         return([f,xnew])
 
+
+    #This is an alternative to ConvFresnel2D.  Instead of using the quadaratic (paraxial)
+    #  approximation of r, the full Huygens-Fresnel integral over the aperture is
+    #  treated directly (see Intro to Fourier Optics eq. 4-9).  Note that this cannot
+    #  be treated with a convolution integral.  This is designed to work when the paraxial
+    #  approximation breaks down.
+    #scr_thresh is an amplitude threshold for skipping a pixel of the source
+    def HuygensFresnel2D(self, g, x, diam_out, z, index_of_refraction=1,
+                      set_dx=True, return_derivs=False, src_thresh=1.e-4):
+        if g.shape[0] != x.shape[0]:
+            raise Exception("HuygensFresnel2D: input field and grid must have same sampling.")
+        if g.ndim != 2:
+            raise Exception("HuygensFresnel2D: input field array must be 2D.")
+        if g.shape[0] != g.shape[1]:
+            raise Exception("HuygensFresnel2D: input field array must be square.")
+
+        lam = self.params['wavelength']/index_of_refraction
+        dx, diam = self.GetDxAndDiam(x)
+        dx_new = dx  # this will probably change
+        xnew = None
+        dPhiTol_deg = self.params['max_chirp_step_deg']
+        dx_chirp = (dPhiTol_deg/45.)*lam*np.sqrt(z*z + (0.5*diam + 0.5*diam_out)**2)/(diam + diam_out)  # sampling criterion
+        if isinstance(set_dx, bool):  # this step is needed so that 1 and 1.0 are not treated as True
+            if set_dx == False:
+                xnew = x
+                nxnew = len(x)
+            else:  # use chirp sampling criterion
+                if dx < dx_chirp:
+                    dx_new = dx_chirp
+        else:  # take dx_new to be value of set_dx
+            if not isinstance(set_dx, float):
+                raise Exception("HuygensFresnel2D: set_dx must be a bool or a float.")
+            if set_dx <= 0:
+                raise Exception("HuygensFresnel2D: numerical value of set_dx must be > 0.")
+            dx_new = set_dx
+
+        thresh = np.max(np.abs(g))*src_thresh
+        if xnew is None:
+            nxnew = np.round(diam_out/dx_new).astype('int')
+            xnew = np.linspace(-diam_out/2., diam_out/2., nxnew)
+        f = np.zeros((nxnew, nxnew)).astype('complex')  #new field
+        for k2 in range(len(x)):
+         for l2 in range(len(x)):
+          if np.abs(g[k2,l2]) < thresh:  continue  # skip empty pixels
+          for k1 in range(nxnew):
+           for l1 in range(nxnew):
+             if (x[k1]**2 + x[l1]**2) > diam_out:  continue
+             deltax = xnew[k1] - x[k2]
+             if np.abs(deltax) < lam/10.: deltax = lam/10.  # small negative values are also mapped to lam/10
+             deltay = xnew[l1] - x[l2]
+             if np.abs(deltay) < lam/10.: deltay = lam/10.
+             rr = z*z + deltax**2 + deltay**2
+             r = np.sqrt(rr)
+             qx = (r/deltax)*np.sin( np.pi*deltax*dx/(lam*r) )
+             qy = (r/deltay)*np.sin( np.pi*deltay*dx/(lam*r) )
+             f[k1,l1] += (1j*lam/np.pi/np.pi)*qx*qy*(g[k2,l2]/rr)*np.exp( 2j*np.pi*(r - z)/lam )
+        return([f,xnew])
 
     #2D Fresenel prop using convolution in the spatial domain
     # g - matrix of complex-valued field in the inital plane
