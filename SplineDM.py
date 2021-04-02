@@ -32,3 +32,4 @@ myspl = SPL(xx, yy, im.reshape((nim*nim,)), xsp, xsp, kx=3, ky=3)
 
 #smoothed image
 sim = myspl(xim, xim)
+#Alex says this output needs to be rotated 90 deg (+/- ?)...
