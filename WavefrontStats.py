@@ -27,7 +27,7 @@ if LOAD:
             wfm = d['WFmeas'][:, 2:-1]
         else:
             wft = np.hstack((wft, d['AOres'][ :, 2:-1]))
-            wfm = np.hstack((wfm, d['AOres'][ :, 2:-1]))
+            wfm = np.hstack((wfm, d['WFmeas'][ :, 2:-1]))
     del wfm
     wft = wft.T
 
