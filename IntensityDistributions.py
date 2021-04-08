@@ -55,20 +55,67 @@ def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
 def Frazinian(x, a, sigr, sigi, cc, n_angles=360, return_derivs=False):
     x = np.array(x)
     assert x.ndim == 1
-    assert (a >=0.) and (sigi >= 0.) and (sigr >=0)
-    assert (cc >= 0) and (cc < 1.)
+    assert (a >=0.) and (sigi > 0.) and (sigr > 0.)
+    assert (cc > -1.) and (cc < 1.)
     assert all(x >= 0.)
+    px = np.zeros(x.shape)  # output probability
     dth = 2*np.pi/n_angles
     th = np.linspace(-np.pi + dth/2, np.pi - dth/2, n_angles)
     cth = np.cos(th)
     sth = np.sin(th)
-    A = 4*np.pi*sigr*sigi
-    B = 1./(cc^2 - 1.)
-    C = np.zeros((len(x),))
+    A = 4*np.pi*sigr*sigi*np.sqrt()
+    B = 1./(cc*cc - 1.)
     for k in range(len(x)):
         sx = np.sqrt(x[k])
-        C[k] = ( (sx*cth - a)**2 )/(2*sigr*sigr)
-        C[k] += x[k]
+        C1 = ( (sx*cth - a)**2 )/(2*sigr*sigr)
+        C2 = sth*sth*x[k]/(2*sigi*sigi)
+        C3 = cc*(a - sx*cth)*sx*sth/(sigr*sigi)
+        px[k] = dth*np.sum(np.exp(B*(C1 + C2 + C3)))
+    px /= A
+    if not return_derivs:
+        return(px)
     
-    return(None)
+    #derivative caclulations (see notes)
+    dpxda    = np.zeros(x.shape)
+    dpxdsigr = np.zeros(x.shape)
+    dpxdsigi = np.zeros(x.shape)
+    dpxdcc   = np.zeros(x.shape)
+    dAdsigr =  4*np.pi*sigi*np.sqrt(1 - cc*cc)
+    dAdsigi =  4*np.pi*sigr*np.sqrt(1 - cc*cc)
+    dAdcc   = -4*np.pi*sigr*sigi*cc/np.sqrt(1 - cc*cc)
+    dBdcc   = -2*cc/( (cc*cc - 1)**2 )
+    for k in range(len(x)):
+        sx = np.sqrt(x[k])
+        C1 = ( (sx*cth - a)**2 )/(2*sigr*sigr)
+        dC1da = (a - sx*cth)/(sigr*sigr)
+        dC1dsigr = - 2.*C1/sigr
+        C2 = sth*sth*x[k]/(2*sigi*sigi)
+        dC2dsigi = - 2.*C2/sigi
+        dC3dcc = (a - sx*cth)*sx*sth/(sigr*sigi)
+        C3 = cc*dC3dcc
+        dC3da = cc*sx*sth/(sigr*sigi)
+        dC3dsigr = - C3/sigr
+        dC3dsigi = - C3/sigi
+        C = C1 + C2 + C3
+        eBC = np.exp(B*C)
+        
+        # calculate dpxda
+        dpxda[k] = dth*np.sum((dC1da + dC3da)*B*eBC)/A
 
+        # calculate dpxdsigr
+        dpxdsigr[k] = - dAdsigr*px[k]/A
+        integ2 = dth*np.sum( (dC1dsigr + dC3dsigr)*B*eBC )/A
+        dpxdsigr[k] += integ2
+
+        # calculate dpxdsigi
+        dpxdsigi[k] = - dAdsigi*px[k]/A
+        integ2 = dth*np.sum( (dC2dsigi + dC3dsigi)*B*eBC )/A
+        dpxdsigi[k] += integ2
+
+        # calculate dpxdcc
+        dpxdcc[k] = - dAdcc*px[k]/A
+        integ1 = dth*np.sum( dBdcc*C*eBC )/A
+        integ2 = dth*np.sum( dC3dcc*B*eBC )/A
+        dpxdcc += integ1 + integ2
+
+    return((px, dpxda, dpxdsigr, dpxdsigi, dpxdcc))
