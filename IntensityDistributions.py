@@ -63,7 +63,7 @@ def Frazinian(x, a, sigr, sigi, cc, n_angles=360, return_derivs=False):
     th = np.linspace(-np.pi + dth/2, np.pi - dth/2, n_angles)
     cth = np.cos(th)
     sth = np.sin(th)
-    A = 4*np.pi*sigr*sigi*np.sqrt()
+    A = 4*np.pi*sigr*sigi*np.sqrt(1. - cc*cc)
     B = 1./(cc*cc - 1.)
     for k in range(len(x)):
         sx = np.sqrt(x[k])
@@ -98,7 +98,7 @@ def Frazinian(x, a, sigr, sigi, cc, n_angles=360, return_derivs=False):
         dC3dsigi = - C3/sigi
         C = C1 + C2 + C3
         eBC = np.exp(B*C)
-        
+
         # calculate dpxda
         dpxda[k] = dth*np.sum((dC1da + dC3da)*B*eBC)/A
 
@@ -116,6 +116,6 @@ def Frazinian(x, a, sigr, sigi, cc, n_angles=360, return_derivs=False):
         dpxdcc[k] = - dAdcc*px[k]/A
         integ1 = dth*np.sum( dBdcc*C*eBC )/A
         integ2 = dth*np.sum( dC3dcc*B*eBC )/A
-        dpxdcc += integ1 + integ2
+        dpxdcc[k] += integ1 + integ2
 
     return((px, dpxda, dpxdsigr, dpxdsigi, dpxdcc))
