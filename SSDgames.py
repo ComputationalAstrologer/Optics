@@ -10,15 +10,20 @@ This does various experiments with SSD
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize as MIZE
-from IntensityDistributions import ModifiedRician, Frazinian
+from IntensityDistributions import ModifiedRicianPlusConstant, Frazinian
+
+#note that Frazinian(xi, 3., 0.5, 2.5, 0.) gives a very similar distribution
+#  ModifiedRician(xi, 0.45, 3.45, 0.795), thus providing an example in which
+#  non-circular normal statistics can effectively mimic a planet.
+
 
 #generate intensities from a non-circular distribution
 
 ca = 3. # constant phasor amplitude
-cr = 1.5  # std of real part of random phasor
+cr = 0.5  # std of real part of random phasor
 ci = 2.5  # std of imag part of random phasor
-cc = .9  # correlation coef of real and imag parts
-xi = ((ca + cr)**2 + ci*ci)*np.linspace(.01,2,50)  #intensity bins
+cc = 0.  # correlation coef of real and imag parts
+xi = ((ca + cr)**2 + ci*ci)*np.linspace(.01,2.,50)  #intensity bins
 pi = Frazinian(xi, ca, cr, ci, cc)
 
 plt.figure(); plt.plot(xi,pi,'ko-');
@@ -28,17 +33,20 @@ plt.figure(); plt.plot(xi,pi,'ko-');
 #v - a vector of length 2 containing the 'a' and 'sig' parameters of the MR
 #y - the frequency values of the intensity histogram
 #x - the intensity values corresponding to the frequency
-def ChiSqModifiedRician(v, y, x):
-    assert len(v) == 2
+def ChiSqModifiedRicianPlusConstant(v, y, x):
+    assert len(v) == 3
     assert y.shape == x.shape
-    (ym, da, ds) = ModifiedRician(x, v[0], v[1], return_derivs=True)
+    (ym, dc, da, ds) = ModifiedRicianPlusConstant(x, v[0], v[1], v[2], return_derivs=True)
     ch = 0.5*np.sum( (ym - y)**2 )  # chi-squared value
-    d0 = np.sum( (ym -y)*da )
-    d1 = np.sum( (ym -y)*ds )
-    g = np.array([d0,d1])
+    d0 = np.sum( (ym - y)*dc )
+    d1 = np.sum( (ym - y)*da )
+    d2 = np.sum( (ym - y)*ds )
+    g = np.array([d0,d1,d2])
     return((ch, g))
 
-guess = np.array([3.5, 1.5])
-out = MIZE(ChiSqModifiedRician, guess, args=(pi,xi),method='CG',
-           jac=True, bounds=None)
+guess = np.array([0.2, 3., .4])
+out = MIZE(ChiSqModifiedRicianPlusConstant, guess, args=(pi,xi),method='CG', jac=True, bounds=None)
+v = out['x']; print("v = ", v);
+fit = ModifiedRicianPlusConstant(xi, v[0], v[1], v[2], return_derivs=False)
 
+plt.plot(xi,fit,'rx:');
