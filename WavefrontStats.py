@@ -10,15 +10,17 @@ import numpy as np
 import os, pickle
 from AndersonDarlingTest import ADtest
 
-loc = './Wavefronts'
+loc = '/w/Wavefronts/OnSky_FF_8mag_oversize_splineDM_03RN_03r0_25L0_035Gain_25AOstart'
 
 M = 1976
 
 LOAD = False
+nfiles = 3
 if LOAD:
     filecount = -1
     for fn in os.listdir(loc):
         filecount += 1
+        if filecount >= nfiles: break
         fnp = open(os.path.join(loc,fn),'rb')
         d = pickle.load(fnp); fnp.close()
         if filecount == 0:
