@@ -52,13 +52,19 @@ def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
 #sigi -            imag
 #cc - correlation coefficient of real and imag parts of random phasor
 #n_angles - the number of points used to calculate the integral over angle
-#return_derivs - if True, also returns derivs w.r.t. 'a' and sigr, sigi and cc
-def Frazinian(x, a, sigr, sigi, cc, n_angles=360, return_derivs=False):
+#ignore_cc - treat the correlation coef as zero don't return its deriv.  However, cc needs to be in the calling sequence
+#return_derivs - if True, also returns derivs w.r.t. 'a' and sigr, sigi and cc (if ignore_cc == False)
+def Frazinian(x, a, sigr, sigi, cc, n_angles=360, ignore_cc=True, return_derivs=False):
     x = np.array(x)
+    assert all(x >= 0.)
     assert x.ndim == 1
     assert (a >=0.) and (sigi > 0.) and (sigr > 0.)
-    assert (cc > -1.) and (cc < 1.)
-    assert all(x >= 0.)
+    if ignore_cc:
+        cc = 0.0
+    else:
+        #assert (cc > -1.) and (cc < 1.)  # rectification removes this constraint
+        rectfactor = 0.98*(np.pi/2)*np.cos(cc*np.pi/2)
+        cc = 0.98*np.sin(cc*np.pi/2)  # this way no boundary constraint on cc is needed (I call this procedure "recitification")
     px = np.zeros(x.shape)  # output probability
     dth = 2*np.pi/n_angles
     th = np.linspace(-np.pi + dth/2, np.pi - dth/2, n_angles)
@@ -113,18 +119,23 @@ def Frazinian(x, a, sigr, sigi, cc, n_angles=360, return_derivs=False):
         integ2 = dth*np.sum( (dC2dsigi + dC3dsigi)*B*eBC )/A
         dpxdsigi[k] += integ2
 
+        if ignore_cc:
+            return((px, dpxda, dpxdsigr, dpxdsigi))
+
         # calculate dpxdcc
         dpxdcc[k] = - dAdcc*px[k]/A
         integ1 = dth*np.sum( dBdcc*C*eBC )/A
         integ2 = dth*np.sum( dC3dcc*B*eBC )/A
         dpxdcc[k] += integ1 + integ2
-
-    return((px, dpxda, dpxdsigr, dpxdsigi, dpxdcc))
+        dpxdcc *= rectfactor
+        return((px, dpxda, dpxdsigr, dpxdsigi, dpxdcc))
 
 
 #this adds a constant (incoherent) intensity, c**2, to the ModifiedRician
 #the easiest way to do this is to convolve the MR with a narrow normal (or half normal)
 #x - the intensity values  -- must be evenly spaced!  and in ascending order.
+#c - c**2 is the constant intensity added to the MR
+#the other paramers are passed to Modified Rician.
 def ModifiedRicianPlusConstant(x, c, a, sig, n_angles=360, return_derivs=False):
     assert np.isclose(x[1]-x[0], x[-1]-x[-2])  # check for uniform spacing
     assert x[1] - x[0] > 0.  #x must be increasing
@@ -136,16 +147,16 @@ def ModifiedRicianPlusConstant(x, c, a, sig, n_angles=360, return_derivs=False):
     space = x[1] - x[0]
     s2 = ( space/2.35 )**2  # sigma^2 of normal
     cen = (x[0] + x[-1])/2. + c*c
-    indic = np.where(x - cen < 0.)[0]  # indicator function
+    #indic = np.where(x - cen < 0.)[0]  # indicator function
     f = np.exp( (- 0.5/s2)*(x-cen)**2  )
-    f[indic] = 0.  # make into a half-Gaussian
+    #f[indic] = 0.  # make into a half-Gaussian
     f /= np.sum(f)
     g = conv(mr, f, mode='same', method='fft')
     if not return_derivs:
         return(g)
     else:
-        dmrda = conv(dmrda, f)
-        dmrds = conv(dmrds, f)
+        dmrda = conv(dmrda, f, mode='same', method='fft')
+        dmrds = conv(dmrds, f, mode='same', method='fft')
         dfdcen = f*(x-cen)/s2
         dmrdcen = conv(mr, dfdcen, mode='same', method='fft')
         return((mr, dmrdcen, dmrda, dmrds))
