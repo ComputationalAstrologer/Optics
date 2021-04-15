@@ -44,6 +44,13 @@ def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
             dpxda[k] = 2*a*(integral[k]*bb*q - px[k]/Icg)
         return((px,dpxda,dpxdsig))
 
+#np.sign has the annoying property that np.sign(0) = 0
+#only works on scalars
+#this returns a float, i.e., 1.0 or -1.0
+def MySign(x):
+    assert np.isscalar(x)
+    if x >= 0. : return(1.0)
+    else: return(-1.0)
 
 #Similar to Modified Rician, except generalized to non-circular statistics.
 #x - output intensity (list or array)
@@ -54,15 +61,19 @@ def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
 #n_angles - the number of points used to calculate the integral over angle
 #ignore_cc - treat the correlation coef as zero don't return its deriv.  However, cc needs to be in the calling sequence
 #return_derivs - if True, also returns derivs w.r.t. 'a' and sigr, sigi and cc (if ignore_cc == False)
-def Frazinian(x, a, sigr, sigi, cc, n_angles=360, ignore_cc=True, return_derivs=False):
+def Frazinian(x, a, sigr, sigi, cc, n_angles=360, ignore_cc=False, return_derivs=False):
     x = np.array(x)
     assert all(x >= 0.)
     assert x.ndim == 1
-    assert (a >=0.) and (sigi > 0.) and (sigr > 0.)
+    sign_a = MySign(a)  # this step removes positivity constraints
+    sign_i = MySign(sigi)
+    sign_r = MySign(sigr)
+    a *= sign_a
+    sigr *= sign_r
+    sigi *= sign_i
     if ignore_cc:
         cc = 0.0
     else:
-        #assert (cc > -1.) and (cc < 1.)  # rectification removes this constraint
         rectfactor = 0.98*(np.pi/2)*np.cos(cc*np.pi/2)
         cc = 0.98*np.sin(cc*np.pi/2)  # this way no boundary constraint on cc is needed (I call this procedure "recitification")
     px = np.zeros(x.shape)  # output probability
@@ -119,15 +130,21 @@ def Frazinian(x, a, sigr, sigi, cc, n_angles=360, ignore_cc=True, return_derivs=
         integ2 = dth*np.sum( (dC2dsigi + dC3dsigi)*B*eBC )/A
         dpxdsigi[k] += integ2
 
-        if ignore_cc:
-            return((px, dpxda, dpxdsigr, dpxdsigi))
 
         # calculate dpxdcc
-        dpxdcc[k] = - dAdcc*px[k]/A
-        integ1 = dth*np.sum( dBdcc*C*eBC )/A
-        integ2 = dth*np.sum( dC3dcc*B*eBC )/A
-        dpxdcc[k] += integ1 + integ2
-        dpxdcc *= rectfactor
+        if not ignore_cc:
+            dpxdcc[k] = - dAdcc*px[k]/A
+            integ1 = dth*np.sum( dBdcc*C*eBC )/A
+            integ2 = dth*np.sum( dC3dcc*B*eBC )/A
+            dpxdcc[k] += integ1 + integ2
+            dpxdcc[k] *= rectfactor
+
+    dpxda    *= sign_a
+    dpxdsigr *= sign_r
+    dpxdsigi *= sign_i
+    if ignore_cc:
+        return((px, dpxda, dpxdsigr, dpxdsigi))
+    else:
         return((px, dpxda, dpxdsigr, dpxdsigi, dpxdcc))
 
 
