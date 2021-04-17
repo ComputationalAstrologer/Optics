@@ -11,33 +11,47 @@ import matplotlib.pyplot as plt
 import pickle, os
 from scipy.optimize import minimize as MIZE
 import PupilMap as PM
-from IntensityDistributions import Frazinian, ModifiedRician, ModifiedRicianPlusConstant
+from IntensityDistributions import ChiSqHist, Frazinian, ModifiedRician, ModifiedRicianPlusConstant
 
-loc = "/w/Wavefronts/OnSky_FF_8mag_oversize_splineDM_03RN_03r0_25L0_035Gain_25AOstart"
+wfloc = "/w/Wavefronts/OnSky_FF_8mag_oversize_splineDM_03RN_03r0_25L0_035Gain_25AOstart"
+CMfile = "./Lyot4489x1976Dmatrix.npy"  # system matrix for coronagraph
+lam = 1.1  # wavelength in microns
+
+contrast = 1.e-3
+planetDist = 0.4  #distance from center in untis of lambda/D
+planetAngl = 10.*np.pi/180  # angle of planet in radians
 
 szp = 50  # linear size of pupil plane
+szf = 67  # linear size of focal plane
 prad = 25  # radius of entrance pupil within pupil plane
 pmap, ipmap = PM.PupilMap(N=szp, pixrad=prad, return_inv=True)
 nppix = len(pmap)  # number of pupil pixels
-lam = 1.  # wavelength in microns
-contrast = 1.e-4  
-planetDist = 2.4  #distance from center in untis of lambda/D
-planetAngl = 267.*np.pi/180  # angle of planet in radians
+circ = np.real(PM.EmbedPupilVec(np.ones((nppix,)),pmap,szp))
 
+#locations for random sample of stellar field
+nstloc = 31
+stloc = []; strad = []; stang = []; stf = []
+for k in range(nstloc):
+    stf.append([])  # each element will be list of complex field values
+    strad.append(8*np.random.rand()*( (szf/2)/13 ))  # 13 is the extent of the image along the axes for "./Lyot4489x1976Dmatrix.npy"
+    stang.append(2*np.pi*np.random.rand())
+    stloc.append(( int(szf/2 + strad[k]*np.cos(stang[k])) ,  # y,x pixel values
+                   int(szf/2 + strad[k]*np.sin(stang[k])) ))
 
-
-#load AO residual wavefronts
+#load AO residual wavefronts and coronagraph model
 LOAD = True
 nfiles2load = 3
 load_measured_wavefronts = True
 correction_factor = np.sqrt(2.11)  # measured WF spatial variance is too big
 if LOAD:
+    D = np.load(CMfile)  # coronagraph system matrix
+    assert D.shape == (szf*szf, nppix)
     filecount = -1
-    for fn in os.listdir(loc):
+    for fn in os.listdir(wfloc):
         filecount += 1
         if filecount > nfiles2load: 
             break
-        fnp = open(os.path.join(loc,fn),'rb')
+        fnp = open(os.path.join(wfloc,fn),'rb')
         d = pickle.load(fnp); fnp.close()
         if filecount == 0:
             wft = d['AOres'][ :, 2:-1]
@@ -52,8 +66,13 @@ if LOAD:
         wfm = wfm.T
     wft = wft.T
 
+nt = wft.shape[0]
+for kt in range(nt):
+    fs = D.dot(wft[kt, :])
+    for ks in range(nstloc):
+        fld = fs[stloc[k][1], stloc[k][0]]
+        stf[k].append( fld )
 
-circ = np.real(PM.EmbedPupilVec(np.ones((1976,)),pmap,szp))
 
 #make pupil field for planet w/o AO residual, phasor for starlight at a planet location
 up = np.sqrt(contrast)*np.ones((szp,szp)).astype('complex')
@@ -67,8 +86,6 @@ for ky in range(szp):
         ph = alphax*xx[ky,kx] + alphay*yy[ky,kx]
         up[ky,kx] *= np.exp(1j*ph)
         sp[ky,kx] *= np.exp(-1j*ph)
-
-#make pupil field for star w/o AO residual
 
 
 nt = wft.shape[0]  # number of time steps
@@ -103,43 +120,11 @@ bsh = np.histogram(bsh, bins=edges, density=True)[0]
 tstring = 'd = ' + str(planetDist) + ', th = ' +  str(planetAngl*180/np.pi)
 scale = np.median(bsh)
 plt.figure(); plt.plot(centers, bsh,'bo'); plt.title(tstring)
-print( np.abs(np.mean(fs)), np.std(np.real(fs)), np.std(np.imag(fs)))
+print( np.abs(np.mean(fs)), np.std(np.real(fs)), np.std(np.imag(fs)),
+      np.corrcoef(np.real(fs), np.imag(fs))[0,1])
 
 
-#this calculates the misfit of the fitted function to the observed histogram.
-#  It also returns the gradient.  
-#v - vector of parameters fed to func
-#y - vector of histogram frequencies
-#centers - centers of histogram bins (these are intensity values)
-#func - the function used to model the histogram.  Must take the 'return_derivs' argument
-#scale - scaling of the chi-squared metric 
-#ignore_cc - forces correlation coef to be zero, due to optimization difficulties (only valid for Frazinian)
-def ChiSqHist(v, y, centers, func, scale, ignore_cc=False):
-    assert y.shape == centers.shape
-    if func == Frazinian: 
-        assert ( (len(v) == 4) or (len(v) == 3) )
-    elif func == ModifiedRician: assert len(v) == 2
-    elif func == ModifiedRicianPlusConstant: assert len(v) ==3
-    else: raise Exception("Error: 'func' is not implemented.") 
-    if func == Frazinian:
-        if ignore_cc:
-            assert len(v) == 3
-            Q = Frazinian(centers, v[0], v[1], v[2], 0., ignore_cc=True, return_derivs=True)
-        else:
-            assert len(v) == 4
-            Q = Frazinian(centers, v[0], v[1], v[2], v[3], ignore_cc=False, return_derivs=True)
-    elif func == ModifiedRician:
-        Q = ModifiedRician(centers, v[0], v[1], return_derivs=True)
-    elif func == ModifiedRicianPlusConstant:
-        Q = ModifiedRicianPlusConstant(centers, v[0], v[1], v[2], return_derivs=True)
 
-    ym = Q[0]  # modeled histogram values
-    ch = 0.5*np.sum( (ym - y)**2 )/(scale**2)
-    g = np.zeros((len(v),))  # gradient values
-    for k in range(len(v)):
-        g[k] = np.sum( (ym - y)*Q[k+1] )/(scale**2)
-
-    return((ch, g))
 
 
 v = np.array([50., 90.]) 
@@ -157,10 +142,4 @@ plt.plot(centers, fit, 'rx:');
 
 
 
-def MyGaussian(length,fwhm):  #for wavelet analysis with scipy.signal.cwt
-     x = np.arange(length)
-     c = (length-1)/2
-     std = fwhm/2.355
-     f = np.exp( - ((x-c)**2)/2/std**2)
-     f /= np.sum(f)
-     return(f)  
+
