@@ -178,3 +178,47 @@ def ModifiedRicianPlusConstant(x, c, a, sig, n_angles=360, return_derivs=False):
         dmrdcen = conv(mr, dfdcen, mode='same', method='fft')
         return((mr, dmrdcen, dmrda, dmrds))
 
+#this calculates the misfit of the fitted function to the observed histogram.
+#  It also returns the gradient.  
+#v - vector of parameters fed to func
+#y - vector of histogram frequencies (or probability densities)
+#centers - centers of histogram bins (these are intensity values)
+#func - the function used to model the histogram.  Must take the 'return_derivs' argument
+#scale - scaling of the chi-squared metric, if None np.median(y)**2 is used
+#ignore_cc - forces correlation coef to be zero, due to optimization difficulties (only valid for Frazinian)
+def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
+    assert y.shape == centers.shape
+    if y == None: scale = np.median(y)**2
+    if func == Frazinian: 
+        assert ( (len(v) == 4) or (len(v) == 3) )
+    elif func == ModifiedRician: assert len(v) == 2
+    elif func == ModifiedRicianPlusConstant: assert len(v) ==3
+    else: raise Exception("Error: 'func' is not implemented.")
+    if func == Frazinian:
+        if ignore_cc:
+            assert len(v) == 3
+            Q = Frazinian(centers, v[0], v[1], v[2], 0., ignore_cc=True, return_derivs=True)
+        else:
+            assert len(v) == 4
+            Q = Frazinian(centers, v[0], v[1], v[2], v[3], ignore_cc=False, return_derivs=True)
+    elif func == ModifiedRician:
+        Q = ModifiedRician(centers, v[0], v[1], return_derivs=True)
+    elif func == ModifiedRicianPlusConstant:
+        Q = ModifiedRicianPlusConstant(centers, v[0], v[1], v[2], return_derivs=True)
+
+    ym = Q[0]  # modeled histogram values
+    ch = 0.5*np.sum( (ym - y)**2 )/(scale**2)
+    g = np.zeros((len(v),))  # gradient values
+    for k in range(len(v)):
+        g[k] = np.sum( (ym - y)*Q[k+1] )/(scale**2)
+
+    return((ch, g))
+
+
+def MyGaussian(length,fwhm):  #for wavelet analysis with scipy.signal.cwt
+     x = np.arange(length)
+     c = (length-1)/2
+     std = fwhm/2.355
+     f = np.exp( - ((x-c)**2)/2/std**2)
+     f /= np.sum(f)
+     return(f)  
