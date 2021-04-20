@@ -7,6 +7,7 @@ Created on Wed Apr  7 13:44:27 2021
 """
 
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.signal import convolve as conv
 
 #This provides the modified Rician probability distribution, P(x)
@@ -162,19 +163,20 @@ def ModifiedRicianPlusConstant(x, c, a, sig, n_angles=360, return_derivs=False):
         (mr, dmrda, dmrds) = ModifiedRician(x, a, sig, n_angles=n_angles, return_derivs=True)
         
     space = x[1] - x[0]
-    s2 = ( space/2.35 )**2  # sigma^2 of normal
+    ss = ( space/2.35 )  # sigma of normal  -
     cen = (x[0] + x[-1])/2. + c*c
     #indic = np.where(x - cen < 0.)[0]  # indicator function
-    f = np.exp( (- 0.5/s2)*(x-cen)**2  )
-    #f[indic] = 0.  # make into a half-Gaussian
-    f /= np.sum(f)
+    f = space*np.exp( (- 0.5/ss**2)*(x-cen)**2 )/(2*np.pi*ss)  # this integrates to unity with good sampling
+    sf = np.sum(f)
+    if sf > 1.e-4:
+        f /= sf
     g = conv(mr, f, mode='same', method='fft')
     if not return_derivs:
         return(g)
     else:
         dmrda = conv(dmrda, f, mode='same', method='fft')
         dmrds = conv(dmrds, f, mode='same', method='fft')
-        dfdcen = f*(x-cen)/s2
+        dfdcen = f*(x-cen)/ss**2
         dmrdcen = conv(mr, dfdcen, mode='same', method='fft')
         return((mr, dmrdcen, dmrda, dmrds))
 
@@ -188,7 +190,7 @@ def ModifiedRicianPlusConstant(x, c, a, sig, n_angles=360, return_derivs=False):
 #ignore_cc - forces correlation coef to be zero, due to optimization difficulties (only valid for Frazinian)
 def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
     assert y.shape == centers.shape
-    if y == None: scale = np.median(y)**2
+    if scale == None: scale = np.median(y)**2
     if func == Frazinian: 
         assert ( (len(v) == 4) or (len(v) == 3) )
     elif func == ModifiedRician: assert len(v) == 2
@@ -207,10 +209,10 @@ def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
         Q = ModifiedRicianPlusConstant(centers, v[0], v[1], v[2], return_derivs=True)
 
     ym = Q[0]  # modeled histogram values
-    ch = 0.5*np.sum( (ym - y)**2 )/(scale**2)
+    ch = 0.5*np.sum( (ym - y)**2 )/scale
     g = np.zeros((len(v),))  # gradient values
     for k in range(len(v)):
-        g[k] = np.sum( (ym - y)*Q[k+1] )/(scale**2)
+        g[k] = np.sum( (ym - y)*Q[k+1] )/scale
 
     return((ch, g))
 

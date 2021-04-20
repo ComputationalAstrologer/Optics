@@ -17,9 +17,7 @@ wfloc = "/w/Wavefronts/OnSky_FF_8mag_oversize_splineDM_03RN_03r0_25L0_035Gain_25
 CMfile = "./Lyot4489x1976Dmatrix.npy"  # system matrix for coronagraph
 lam = 1.1  # wavelength in microns
 
-contrast = 1.e-3
-planetDist = 0.4  #distance from center in untis of lambda/D
-planetAngl = 10.*np.pi/180  # angle of planet in radians
+contrast = 1.e-3  #planet contrast
 
 szp = 50  # linear size of pupil plane
 szf = 67  # linear size of focal plane
@@ -29,19 +27,23 @@ nppix = len(pmap)  # number of pupil pixels
 circ = np.real(PM.EmbedPupilVec(np.ones((nppix,)),pmap,szp))
 
 #locations for random sample of stellar field
-nstloc = 31
-stloc = []; strad = []; stang = []; stf = []
+nstloc = 11
+stloc = []; strad = []; stang = []; stf = []; sth = []; cen =[]
 for k in range(nstloc):
+    cen.append([])  # histogram bin centers
     stf.append([])  # each element will be list of complex field values
-    strad.append(8*np.random.rand()*( (szf/2)/13 ))  # 13 is the extent of the image along the axes for "./Lyot4489x1976Dmatrix.npy"
-    stang.append(2*np.pi*np.random.rand())
-    stloc.append(( int(szf/2 + strad[k]*np.cos(stang[k])) ,  # y,x pixel values
-                   int(szf/2 + strad[k]*np.sin(stang[k])) ))
+    sth.append([])  # each element will be a histogram of intensity values
+    strad.append(8*np.random.rand())  # radius in lam/D units
+    rrr = strad[-1]*((szf/2)/13 )  # 13 is the extent of the image along the axes for "./Lyot4489x1976Dmatrix.npy"
+    stang.append(np.random.rand()*360)
+    the = stang[-1]*np.pi/180
+    stloc.append(( int(szf/2 + rrr*np.cos(the)) ,  # y,x pixel values
+                   int(szf/2 + rrr*np.sin(the)) ))
 
 #load AO residual wavefronts and coronagraph model
 LOAD = True
 nfiles2load = 3
-load_measured_wavefronts = True
+load_measured_wavefronts = False
 correction_factor = np.sqrt(2.11)  # measured WF spatial variance is too big
 if LOAD:
     D = np.load(CMfile)  # coronagraph system matrix
@@ -68,11 +70,10 @@ if LOAD:
 
 nt = wft.shape[0]
 for kt in range(nt):
-    fs = D.dot(wft[kt, :])
+    fs = (D.dot(wft[kt, :])).reshape(szf,szf)
     for ks in range(nstloc):
-        fld = fs[stloc[k][1], stloc[k][0]]
-        stf[k].append( fld )
-
+        fld = fs[stloc[ks][1], stloc[ks][0]]
+        stf[ks].append( fld )
 
 #make pupil field for planet w/o AO residual, phasor for starlight at a planet location
 up = np.sqrt(contrast)*np.ones((szp,szp)).astype('complex')
@@ -86,6 +87,39 @@ for ky in range(szp):
         ph = alphax*xx[ky,kx] + alphay*yy[ky,kx]
         up[ky,kx] *= np.exp(1j*ph)
         sp[ky,kx] *= np.exp(-1j*ph)
+
+
+
+#make histograms
+drop_frac = 0.05
+nbins = 50
+for kl in range(nstloc):
+    sti = []
+    for ki in range(len(stf[kl])):
+        sti.append( np.real(stf[kl][ki]*np.conj(stf[kl][ki])) )
+    sti = np.array(sti)
+    sti.sort()  # put intensities in ascending order
+    sti = sti[: int((1 - drop_frac)*len(sti))]  # drop largest values
+    edges = np.linspace(0, sti[-1], nbins+1)
+    cen[kl] = np.linspace(edges[0], edges[-2], nbins) + .5*(edges[1] - edges[0])
+    sth[kl] = np.histogram(sti, bins=edges, density=True)[0]
+    tstring = 'd = ' + str(strad[kl]) + ', th = ' +  str(stang[kl])
+    #fit histogram
+    meanI = np.sum(cen[kl]*sth[kl])*(cen[kl][1] - cen[kl][0])
+    v = np.array([.2*np.sqrt(meanI), np.sqrt(meanI)]) 
+    out = MIZE(ChiSqHist, v, args=(sth[kl], cen[kl], ModifiedRician), method='CG', jac=True, bounds=None)
+    v = out['x']
+    fit = ModifiedRician(cen[kl], v[0], v[1], return_derivs=False)
+    plt.figure(); plt.plot(cen[kl], sth[kl],'bo-', cen[kl], fit, 'rx:'); plt.title(tstring);
+#    v = np.array([0.1*np.min([v[0],v[1]]) , v[0], v[1]])
+#    out = MIZE(ChiSqHist, v, args=(sth[kl], cen[kl], ModifiedRicianPlusConstant), method='CG', jac=True, bounds=None)
+#    v = out['x']
+#    fit = ModifiedRicianPlusConstant(cen[kl], v[0], v[1], v[2], return_derivs=False)
+#    plt.plot(cen[kl], fit, 'mp:');
+
+
+
+
 
 
 nt = wft.shape[0]  # number of time steps
@@ -108,30 +142,14 @@ for tt in range(nt):
         fsp[tt] = np.sum(sfield*sp)
         bsp[tt] = np.real(fsp[tt]*np.conj(fsp[tt]))
 
-#make a histogram
-drop_frac = 0.05
-nbins = 50
-bsh = 1.0*bs  # deep copy
-bsh.sort()
-bsh = bsh[: int((1 - drop_frac)*len(bsh))]
-edges = np.linspace(0, bsh[-1], nbins+1)
-centers = np.linspace(edges[0], edges[-2], nbins) + .5*(edges[1] - edges[0])
-bsh = np.histogram(bsh, bins=edges, density=True)[0]
-tstring = 'd = ' + str(planetDist) + ', th = ' +  str(planetAngl*180/np.pi)
-scale = np.median(bsh)
-plt.figure(); plt.plot(centers, bsh,'bo'); plt.title(tstring)
-print( np.abs(np.mean(fs)), np.std(np.real(fs)), np.std(np.imag(fs)),
-      np.corrcoef(np.real(fs), np.imag(fs))[0,1])
 
 
 
 
 
-v = np.array([50., 90.]) 
-out2 = MIZE(ChiSqHist, v, args=(bsh, centers, ModifiedRician, scale), method='CG', jac=True, bounds=None)
 v = out2['x']
 print("v = ", v)
-fit = ModifiedRician(centers, v[0], v[1], return_derivs=False)
+
 plt.plot(centers, fit, 'kp:');
 v = np.array([1.5*v[0],v[1]/2,2*v[1], 0.1])
 out1 = MIZE(ChiSqHist, v, args=(bsh, centers, Frazinian, scale), method='CG', jac=True, bounds=None)
