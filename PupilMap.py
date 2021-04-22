@@ -113,8 +113,8 @@ def ChiSqGauss(v, y, angles):
 #returns a refinement of 'ang' that centers it on a focal plane pixel
 def FindPerfectAngle(ang, D, szp, ipmap):
     assert len(ang) == 2
-    nn = 6  # number of additional points used for fit
-    rr = np.pi  # = lambda/D/2 change in angle
+    nn = 7  # number of additional points used for fit
+    rr = np.pi/2  # = lambda/D/2 change in angle
     s = np.linspace(-.5, .5, szp)
     (xx, yy) = np.meshgrid(s,s,indexing='xy'); del s
     af = []  # |field| values at desired pixel
@@ -132,7 +132,7 @@ def FindPerfectAngle(ang, D, szp, ipmap):
         for ky in range(szp):
             for kx in range(szp):
                 ph[ky, kx] = alpha0*xx[ky, kx] + alpha1*yy[ky, kx]
-        u = np.exp(ph)
+        u = np.exp(1j*ph)
         v = ExtractPupilVec(u, ipmap)  # pupil field vector
         w = D.dot(v)  #  focal plane field vector
         if k == -1:
@@ -142,7 +142,7 @@ def FindPerfectAngle(ang, D, szp, ipmap):
     af /= np.max(af)
 
     mm = np.argmax(af)
-    guess = [1., 1., phi[mm][0], phi[mm][1]]
+    guess = [1., np.pi/2, phi[mm][0], phi[mm][1]]
     out = MIZE(ChiSqGauss, guess, args=(af, phi), method='CG', jac=True)
     perfang = (out['x'][2], out['x'][3])
     return(perfang)
