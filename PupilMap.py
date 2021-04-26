@@ -107,14 +107,14 @@ def ChiSqGauss(v, y, angles):
 #(alpha_x, alpha_y) angle for initial phasor (must have len == 2)
 #It is assumed that (alpha_x, alpha_y) are in units of radians, so that
 #  (2pi, 0) will create a spot at 1 lambda/D away from the center.
-#D - the complex-valued system matrix (focal pixes X pupil pixels)
+#D - the complex-valued system matrix (focal pixels X pupil pixels)
 #szp - linear size of pupil in pixels - needed for ExtractPupilVec
 #ipmap inverse pupil map from PupilMap - needed for ExtractPupilVec
 #returns a refinement of 'ang' that centers it on a focal plane pixel
 def FindPerfectAngle(ang, D, szp, ipmap):
     assert len(ang) == 2
     nn = 7  # number of additional points used for fit
-    rr = np.pi/2  # = lambda/D/2 change in angle
+    rr = np.pi  # = lambda/D/2 change in angle
     s = np.linspace(-.5, .5, szp)
     (xx, yy) = np.meshgrid(s,s,indexing='xy'); del s
     af = []  # |field| values at desired pixel
@@ -124,7 +124,7 @@ def FindPerfectAngle(ang, D, szp, ipmap):
         if k == -1:  # -1 corresponds to the initial guess
             a0 = 0.; a1 = 0.
         else:
-            th = k*2.*np.pi/nn
+            th = k*2.*np.pi/nn + np.pi/11
             a0 = rr*np.cos(th); a1 = rr*np.sin(th)
         alpha0 = ang[0] + a0
         alpha1 = ang[1] + a1
@@ -142,8 +142,21 @@ def FindPerfectAngle(ang, D, szp, ipmap):
     af /= np.max(af)
 
     mm = np.argmax(af)
-    guess = [1., np.pi/2, phi[mm][0], phi[mm][1]]
+    guess = [1.5, 2., phi[mm][0], phi[mm][1]]
     out = MIZE(ChiSqGauss, guess, args=(af, phi), method='CG', jac=True)
-    perfang = (out['x'][2], out['x'][3])
-    return(perfang)
+    perfang = (out['x'][2], out['x'][3])  # perfang is the optimal angle
+
+    #find the corresponding detector pixel
+    for ky in range(szp):
+        for kx in range(szp):
+            ph[ky, kx] = perfang[0]*xx[ky, kx] + perfang[1]*yy[ky, kx]
+    u = np.exp(1j*ph)
+    v = ExtractPupilVec(u, ipmap)
+    mm = np.argmax(np.abs(D.dot(v)))  # find pixel of max |field| on detector
+
+    #print()
+    #print(ang)
+    #print(out)
+
+    return( (perfang, mm, out['success']) )
 
