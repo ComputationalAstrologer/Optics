@@ -101,6 +101,54 @@ def ChiSqGauss(v, y, angles):
     return(ch, dchd0, dchd1, dchd2, dchd3)
 
 
+#This attemps to find the angle that centers the planetary image on a detector pixel
+def FindPerfectAngle(ang, D, szp, ipmap):
+    assert len(ang) == 2
+    M = int(np.sqrt(D.shape[0]))  # detector image is M-by-M
+    s = np.linspace(-.5, .5, szp)  #1D pupil coord
+    npt = 8  # points used for 1D fit
+    assert np.mod(npt, 2) == 0
+    (xx, yy) = np.meshgrid(s,s,indexing='xy'); del s  # xx[ky,kx] increases with kx and does not change with ky
+    ph = np.zeros((szp, szp)).astype('complex')  # pupil phasor
+    # find the desired detector pixel
+    for ky in range(szp):
+        for kx in range(szp):
+            ph[ky, kx] = np.exp(1j*(ang[0]*xx[ky, kx] + ang[1]*yy[ky, kx]))
+    v = ExtractPupilVec(ph, ipmap)  # pupil field vector
+    w = np.abs(D.dot(v))  #  focal plane |field| vector
+    (my, mx) = np.unravel_index( np.argmax(w) , (M,M), 'C')  # try to get pattern centered on (my,mx)
+    #do horizontal fit
+    q = 5*np.pi*np.linspace(-1,1,npt)
+    alphx = [ang[0]]; alphy= [ang[1]]
+    pixx  = [mx]; pixy = [my]
+    for k in range(npt):
+        alphx.append(ang[0] + q[k])
+        for ky in range(szp):
+            for kx in range(szp):
+                ph[ky, kx] = np.exp(1j*(alphx[-1]*xx[ky, kx] + ang[1]*yy[ky, kx]))
+        v = ExtractPupilVec(ph, ipmap)  # pupil field vector
+        w = np.abs(D.dot(v))  #  focal plane |field| vector
+        W = w.reshape(M,M)
+        pixx.append(np.argmax(W[my,:]))
+    for k in range(npt):
+        alphy.appen(ang[1] + q[k])
+        for ky in range(szp):
+            for kx in range(szp):
+                ph[ky, kx] = np.exp(1j*(ang[0]*xx[ky, kx] + alphy[-1]*yy[ky, kx]))
+        v = ExtractPupilVec(ph, ipmap)
+        w = np.abs(D.dot(v))
+        W = w.reshape(M,M)
+        pixy.append(np.argmax(W[:,mx]))
+
+    #fit lines
+    polyx = np.polyfit(pixx, alphx, 1)
+    polyy = np.polyfit(pixy, alphy, 1)
+    perfx = polyx[0]*mx + polyx[1]
+    perfy = polyy[0]*my + polyy[1]
+    return((perfx, perfy))
+
+
+#---  Do not use.  It doesn't work very well.
 #This finds the slope of pupil plane phase that centers the image of a point
 #  source exactly over the center of a focal plane pixel.
 #This works by fitting a Gaussian to the |field(angle)| function.
@@ -111,45 +159,63 @@ def ChiSqGauss(v, y, angles):
 #szp - linear size of pupil in pixels - needed for ExtractPupilVec
 #ipmap inverse pupil map from PupilMap - needed for ExtractPupilVec
 #returns a refinement of 'ang' that centers it on a focal plane pixel
-def FindPerfectAngle(ang, D, szp, ipmap):
+def DoNotUseXXFindPerfectAngle(ang, D, szp, ipmap):
     assert len(ang) == 2
     nn = 7  # number of additional points used for fit
-    rr = np.pi  # = lambda/D/2 change in angle
+    rr = 1.9*np.pi  # = lambda/D/2 change in angle
     s = np.linspace(-.5, .5, szp)
     (xx, yy) = np.meshgrid(s,s,indexing='xy'); del s
-    af = []  # |field| values at desired pixel
-    phi = []  # angles corresponding to values in 'af'
-    for k in np.arange(-1, nn):
-        ph = np.zeros((szp, szp))
-        if k == -1:  # -1 corresponds to the initial guess
-            a0 = 0.; a1 = 0.
-        else:
-            th = k*2.*np.pi/nn + np.pi/11
-            a0 = rr*np.cos(th); a1 = rr*np.sin(th)
-        alpha0 = ang[0] + a0
-        alpha1 = ang[1] + a1
-        phi.append((alpha0, alpha1))
-        for ky in range(szp):
-            for kx in range(szp):
-                ph[ky, kx] = alpha0*xx[ky, kx] + alpha1*yy[ky, kx]
-        u = np.exp(1j*ph)
-        v = ExtractPupilVec(u, ipmap)  # pupil field vector
-        w = D.dot(v)  #  focal plane field vector
-        if k == -1:
-            N = np.argmax(np.abs(w))  # pixel where |field| is max
-        af.append(np.abs(w[N]))
-    af = np.array(af)
-    af /= np.max(af)
+    itcount = -1
+    while True:
+        af = []  # |field| values at desired pixel
+        phi = []  # angles corresponding to values in   'af'
+        itcount += 1
+        if itcount == 0:
+            ang0 = (ang[0], ang[1])
+        for k in np.arange(-1, nn):
+            ph = np.zeros((szp, szp))
+            if k == -1:  # -1 corresponds to the initial guess
+                a0 = 0.; a1 = 0.
+            else:
+                th = k*2.*np.pi/nn + np.pi/11
+                a0 = rr*np.cos(th); a1 = rr*np.sin(th)
+                if itcount > 0:
+                    a0 /= 2.; a1 /= 2.
+            alpha0 = ang0[0] + a0
+            alpha1 = ang0[1] + a1
+            phi.append((alpha0, alpha1))
+            for ky in range(szp):
+                for kx in range(szp):
+                    ph[ky, kx] = alpha0*yy[ky, kx] + alpha1*xx[ky, kx]
+            u = np.exp(1j*ph)
+            v = ExtractPupilVec(u, ipmap)  # pupil field vector
+            w = D.dot(v)  #  focal plane field vector
+            if k == -1:
+                N = np.argmax(np.abs(w))  # pixel where |field| is max
+            af.append(np.abs(w[N]))
+        af = np.array(af)
+        if itcount == 0:
+            normf = np.max(af)
+        af /= normf
 
-    mm = np.argmax(af)
-    guess = [1.5, 2., phi[mm][0], phi[mm][1]]
-    out = MIZE(ChiSqGauss, guess, args=(af, phi), method='CG', jac=True)
-    perfang = (out['x'][2], out['x'][3])  # perfang is the optimal angle
+        if itcount == 0:
+            mm = np.argmax(af)
+            guess = [1.5, 2., phi[mm][0], phi[mm][1]]
+        out = MIZE(ChiSqGauss, guess, args=(af, phi), method='CG', jac=True)
+        if out['success']:
+            ang0 = (out['x'][0], out['x'][1])
+            guess = out['x']
+            if itcount > 1: break
+        else:
+            ang0 = (ang[0] + np.random.rand()/np.pi/2., ang[1] + np.random.randn()/np.pi/2. )
+            if itcount > 2:
+                break
+    perfang = (out['x'][2], out['x'][3])  # perfang is the optimal angle (hopefully)
 
     #find the corresponding detector pixel
     for ky in range(szp):
         for kx in range(szp):
-            ph[ky, kx] = perfang[0]*xx[ky, kx] + perfang[1]*yy[ky, kx]
+            ph[ky, kx] = perfang[0]*yy[ky, kx] + perfang[1]*xx[ky, kx]
     u = np.exp(1j*ph)
     v = ExtractPupilVec(u, ipmap)
     mm = np.argmax(np.abs(D.dot(v)))  # find pixel of max |field| on detector
