@@ -24,25 +24,11 @@ szf = 67  # linear size of focal plane
 prad = 25  # radius of entrance pupil within pupil plane
 pmap, ipmap = PM.PupilMap(N=szp, pixrad=prad, return_inv=True)
 nppix = len(pmap)  # number of pupil pixels
-circ = np.real(PM.EmbedPupilVec(np.ones((nppix,)),pmap,szp))
-
-#locations for random sample of stellar field
-nstloc = 11
-stloc = []; strad = []; stang = []; stf = []; sth = []; cen =[]
-for k in range(nstloc):
-    cen.append([])  # histogram bin centers
-    stf.append([])  # each element will be list of complex field values
-    sth.append([])  # each element will be a histogram of intensity values
-    strad.append(8*np.random.rand())  # radius in lam/D units
-    rrr = strad[-1]*((szf/2)/13 )  # 13 is the extent of the image along the axes for "./Lyot4489x1976Dmatrix.npy"
-    stang.append(np.random.rand()*360)
-    the = stang[-1]*np.pi/180
-    stloc.append(( int(szf/2 + rrr*np.cos(the)) ,  # y,x pixel values
-                   int(szf/2 + rrr*np.sin(the)) ))
+circ = np.real(PM.EmbedPupilVec(np.ones((nppix,)),pmap,szp))  # this is just a circle embedded in a square array
 
 #load AO residual wavefronts and coronagraph model
 LOAD = True
-nfiles2load = 3
+nfiles2load = 1
 load_measured_wavefronts = False
 correction_factor = np.sqrt(2.11)  # measured WF spatial variance is too big
 if LOAD:
@@ -68,42 +54,54 @@ if LOAD:
         wfm = wfm.T
     wft = wft.T
 
-nt = wft.shape[0]
+
+#locations for random sample of stellar field
+nloc = 5
+loc = []; angls = []; dpix=[]; 
+for k in range(nloc):  # this code block uses PM.FindPerfectAngle to adjust the input angles
+    r = (np.random.rand()*7.5 + 0.5)*2*np.pi
+    t = np.random.rand()*2.*np.pi
+    (aa, dpixx, success) = PM.FindPerfectAngle([r*np.sin(t), r*np.cos(t)], D, szp, ipmap)
+    if success:
+        angls.append((aa[0], aa[1]))
+        dpix.append( np.ravel_multi_index(dpixx, (szf, szf), order='C'))  #detector pixel corresponding to the angle (aa[0], aa[1])
+nloc = len(dpix)
+
+nt = wft.shape[0]  #number of wavefronts
+sf = np.zeros((nloc, nt)).astype('complex')  # stellar field time-series at each loc
+sb = np.zeros((nloc, nt))  # stellar brightness time-series at each loc
+pb = np.zeros((nloc, nt))  # planetary brightnesstime-series at each loc
+s = np.linspace(-.5, .5, szp)  # scaled 1D pupil coordinate
+(xx, yy) = np.meshgrid(s,s,indexing='xy'); del s  # 2D pupil coords.  xx increases to the right.  xx[k,:] is increasing.  xx[:,k] is constant
+pphasor = np.zeros((nppix, nloc)).astype('complex')  # pupil phasor corresponding a point source at loc[k]
+phas = np.zeros((szp, szp)).astype('complex')
+for k in range(nloc):
+    for ky in range(szp):
+        for kx in range(szp):
+            phas[ky,kx] = np.exp( 1j*(angls[k][0]*yy[ky,kx] + angls[k][1]*xx[ky,kx]  ) )  # this ordering is correct for 'xy' indexing of np.meshgrid
+    pphasor[:,k] = PM.ExtractPupilVec(phas, ipmap)  #planet phasor
+
 for kt in range(nt):
-    fs = (D.dot(wft[kt, :])).reshape(szf,szf)
-    for ks in range(nstloc):
-        fld = fs[stloc[ks][1], stloc[ks][0]]
-        stf[ks].append( fld )
-
-#make pupil field for planet w/o AO residual, phasor for starlight at a planet location
-up = np.sqrt(contrast)*np.ones((szp,szp)).astype('complex')
-sp = np.ones((szp,szp)).astype('complex')
-s = np.linspace(-np.pi, np.pi, szp)
-(xx, yy) = np.meshgrid(s,s,indexing='xy'); del s
-alphax = planetDist*np.cos(planetAngl)
-alphay = planetDist*np.sin(planetAngl)
-for ky in range(szp):
-    for kx in range(szp):
-        ph = alphax*xx[ky,kx] + alphay*yy[ky,kx]
-        up[ky,kx] *= np.exp(1j*ph)
-        sp[ky,kx] *= np.exp(-1j*ph)
-
-
+    for k in range(nloc):
+        sf[k, kt] = ( D.dot(wft[kt, :]) )[dpix[k]]  # stellar field
+        sb[k, kt] = np.real( sf[k, kt]*np.conj(sf[k, kt]) )  # stellar intensity
+        pb[k, kt] =   contrast*np.abs(( D.dot(wft[kt,:]*pphasor[:,k]) )[dpix[k]])**2  #planet intensity
 
 #make histograms
 drop_frac = 0.05
 nbins = 50
-for kl in range(nstloc):
-    sti = []
-    for ki in range(len(stf[kl])):
-        sti.append( np.real(stf[kl][ki]*np.conj(stf[kl][ki])) )
-    sti = np.array(sti)
-    sti.sort()  # put intensities in ascending order
-    sti = sti[: int((1 - drop_frac)*len(sti))]  # drop largest values
-    edges = np.linspace(0, sti[-1], nbins+1)
-    cen[kl] = np.linspace(edges[0], edges[-2], nbins) + .5*(edges[1] - edges[0])
-    sth[kl] = np.histogram(sti, bins=edges, density=True)[0]
-    tstring = 'd = ' + str(strad[kl]) + ', th = ' +  str(stang[kl])
+sbh = []  # this will contain histograms of the stellar intensity
+edges = []  # bin edges
+cntrs = []  # bin centers
+for kl in range(nloc):
+    sb[k,:].sort()  # sort intensities in ascending order
+    q = sb[k,: int((1- drop_frac)*nt)]
+    edges.append(np.linspace(0, q[-1], nbins+1))
+    cntrs.append(np.linspace(edges[-1][0], edges[-1][-2], nbins) + .5*(edges[-1][1] - edges[-1][0]))
+    sbh.append(np.histogram(q, bins=edges, density=True)[0])
+    rr = np.sqrt(angls[k][0]**2 + angls[k][1]**2)/2/np.pi
+    th = np.arctan2(angls[k][0], angls[k][1])*180/np.pi
+    tstring = 'd = ' + str( rr ) + ', th = ' +  str(th)
     #fit histogram
     meanI = np.sum(cen[kl]*sth[kl])*(cen[kl][1] - cen[kl][0])
     v = np.array([.2*np.sqrt(meanI), np.sqrt(meanI)]) 

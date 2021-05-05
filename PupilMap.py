@@ -7,6 +7,7 @@ Created on Mon Sep 14 18:03:51 2020
 """
 
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.optimize import minimize as MIZE
 
 #This function produces a dictionary that goes from a 1D index corresponding
@@ -62,7 +63,6 @@ def ExtractPupilVec(square_array, ipmap):
                 pvec.append(square_array[l,k])
     return(np.array(pvec))
 
-
 #np.sign has the annoying property that np.sign(0) = 0
 #only works on scalars
 #this returns a float, i.e., 1.0 or -1.0
@@ -71,81 +71,189 @@ def MySign(x):
     if x >= 0. : return(1.0)
     else: return(-1.0)
 
-#This is called FindPerfectAngle
-#It returns the misfit metric and its derivatives
-#v - vector of params to be fit: v[0]- amplitude, v[1] - std dev, v[2],v[3] - center
-#y - vector of amplitudes
-#angles - list of touples containing angles
-def ChiSqGauss(v, y, angles):
-    assert len(v) == 4
-    assert len(y) == len(angles)
-    assert len(angles[0]) == 2  # each angle has 2 components
-    assert len(y) >= 4  # the function being fitted has 4 free params
-    sign_0 = MySign(v[0])
-    v0 = v[0]*sign_0  # removes positivity constraint
-    ch = 0.
-    dchd0 = 0.
-    dchd1 = 0.
-    dchd2 = 0.
-    dchd3 = 0.
-    for k in range(len(y)):
-        num = -0.5*( (v[2] - angles[k][0])**2 + (v[3] - angles[k][1])**2 )
-        Q =  num/(v[1]*v[1])
-        yf = v0*np.exp(Q)
-        diff = yf - y[k]
-        ch += 0.5*diff**2  # chi-squared value
-        dchd0 += sign_0*diff*np.exp(Q)
-        dchd1 += diff*yf*(-2.*Q/v[1])
-        dchd2 += -1.*diff*yf*(v[2] - angles[k][0])/(v[1]*v[1])
-        dchd3 += -1.*diff*yf*(v[3] - angles[k][1])/(v[1]*v[1])
-    return(ch, dchd0, dchd1, dchd2, dchd3)
+#this evaluates a chi-squared
+#v - input vector (center_x, center_y, 2xVariance, amplitude)
+#  center_x and center_y are pixel index values consisten with 'img' indicies
+#img - 2D image over which the Gaussian is compared
+def ChiSq2DGauss(v, img, return_derivs=True, debug=False):
+    vv = 1.*np.array(v)  # deep copy
+    assert len(vv) == 4
+    assert img.ndim == 2
+    ny = img.shape[0]; nx = img.shape[1]
+    s2 = MySign(vv[2])  # this removes positivity constraint
+    vv[2] *= s2
+    s3 = MySign(vv[3])  # this removes the positivity constraint
+    vv[3] *= s3
+    c = 0.  # cost
+    if debug: yy = np.zeros(img.shape)
+    for ky in range(ny):
+        for kx in range(nx):
+            arg = (vv[0] - ky)**2 + (vv[1] - kx)**2
+            arg *= -1./vv[2]
+            ym = vv[3]*np.exp(arg)
+            c += 0.5*(ym - img[ky, kx])**2
+            if debug: yy[ky,kx] = ym
+    if debug:
+        #plt.figure(); plt.imshow(yy ); plt.colorbar(); plt.title('yy');
+        #plt.figure(); plt.imshow(img); plt.colorbar(); plt.title('img');
+        plt.figure(); plt.imshow(yy-img); plt.colorbar(); plt.title('diff')
+    if not return_derivs:
+        return(c)
+    #calculate derivatives
+    dcd0 = 0.
+    dcd1 = 0.
+    dcd2 = 0.
+    dcd3 = 0.
+    for ky in range(ny):
+        for kx in range(nx):
+            arg = (vv[0] - ky)**2 + (vv[1] - kx)**2
+            arg *= -1./vv[2]
+            ym = vv[3]*np.exp(arg)
+            d = (ym - img[ky, kx])
+            dcd1 += -1.*d*ym*2.*(vv[1] - kx)/vv[2]
+            dcd0 += -1.*d*ym*2.*(vv[0] - ky)/vv[2]
+            dcd2 += -1.*s2*d*ym*arg/vv[2]
+            dcd3 += d*s3*np.exp(arg)
+    return(c, np.array([dcd0, dcd1, dcd2, dcd3]))
+
+#the amplitude is fixed in this one
+def ChiSq2DGaussConstAmp(v, img, return_derivs=True, amp=1.0, debug=False):
+    vv = 1.*np.array(v)  # deep copy
+    assert len(vv) == 3
+    assert img.ndim == 2
+    ny = img.shape[0]; nx = img.shape[1]
+    s2 = MySign(vv[2])  # this removes positivity constraint
+    vv[2] *= s2
+    c = 0.  # cost
+    if debug: yy = np.zeros(img.shape)
+    for ky in range(ny):
+        for kx in range(nx):
+            arg = (vv[0] - ky)**2 + (vv[1] - kx)**2
+            arg *= -1./vv[2]
+            ym = amp*np.exp(arg)
+            c += 0.5*(ym - img[ky, kx])**2
+            if debug: yy[ky,kx] = ym
+    if debug:
+        #plt.figure(); plt.imshow(yy ); plt.colorbar(); plt.title('yy');
+        #plt.figure(); plt.imshow(img); plt.colorbar(); plt.title('img');
+        plt.figure(); plt.imshow(yy-img); plt.colorbar(); plt.title('diff')
+    if not return_derivs:
+        return(c)
+    #calculate derivatives
+    dcd0 = 0.
+    dcd1 = 0.
+    dcd2 = 0.
+    for ky in range(ny):
+        for kx in range(nx):
+            arg = (vv[0] - ky)**2 + (vv[1] - kx)**2
+            arg *= -1./vv[2]
+            ym = amp*np.exp(arg)
+            d = (ym - img[ky, kx])
+            dcd1 += -1.*d*ym*2.*(vv[1] - kx)/vv[2]
+            dcd0 += -1.*d*ym*2.*(vv[0] - ky)/vv[2]
+            dcd2 += -1.*s2*d*ym*arg/vv[2]
+    return(c, np.array([dcd0, dcd1, dcd2]))
 
 
-#This attemps to find the angle that centers the planetary image on a detector pixel
 def FindPerfectAngle(ang, D, szp, ipmap):
     assert len(ang) == 2
-    M = int(np.sqrt(D.shape[0]))  # detector image is M-by-M
-    s = np.linspace(-.5, .5, szp)  #1D pupil coord
-    npt = 8  # points used for 1D fit
-    assert np.mod(npt, 2) == 0
-    (xx, yy) = np.meshgrid(s,s,indexing='xy'); del s  # xx[ky,kx] increases with kx and does not change with ky
-    ph = np.zeros((szp, szp)).astype('complex')  # pupil phasor
-    # find the desired detector pixel
+    gridl = 3*np.pi  # linear size of angle grid
+    ng = 5  # angle grid has shape = (ng, ng)
+    ndpix = int(np.round(np.sqrt(D.shape[0])))  # linear dimension of detector
+    s = np.linspace(-.5, .5, szp)  # pupil 1D coord
+    g = np.linspace(-gridl/2, gridl/2, ng); delta_g = g[1] - g[0]
+    (xx, yy) = np.meshgrid(s,s,indexing='xy'); del s  # pupil grid
+    (gx, gy) = np.meshgrid(g,g,indexing='xy'); del g  # angle grid
+    gim = np.zeros((ng, ng))
+    ph = np.zeros((szp, szp))
+    #find the pixel we want to be centered on
     for ky in range(szp):
         for kx in range(szp):
-            ph[ky, kx] = np.exp(1j*(ang[0]*xx[ky, kx] + ang[1]*yy[ky, kx]))
-    v = ExtractPupilVec(ph, ipmap)  # pupil field vector
-    w = np.abs(D.dot(v))  #  focal plane |field| vector
-    (my, mx) = np.unravel_index( np.argmax(w) , (M,M), 'C')  # try to get pattern centered on (my,mx)
-    #do horizontal fit
-    q = 5*np.pi*np.linspace(-1,1,npt)
-    alphx = [ang[0]]; alphy= [ang[1]]
-    pixx  = [mx]; pixy = [my]
-    for k in range(npt):
-        alphx.append(ang[0] + q[k])
-        for ky in range(szp):
-            for kx in range(szp):
-                ph[ky, kx] = np.exp(1j*(alphx[-1]*xx[ky, kx] + ang[1]*yy[ky, kx]))
-        v = ExtractPupilVec(ph, ipmap)  # pupil field vector
-        w = np.abs(D.dot(v))  #  focal plane |field| vector
-        W = w.reshape(M,M)
-        pixx.append(np.argmax(W[my,:]))
-    for k in range(npt):
-        alphy.appen(ang[1] + q[k])
-        for ky in range(szp):
-            for kx in range(szp):
-                ph[ky, kx] = np.exp(1j*(ang[0]*xx[ky, kx] + alphy[-1]*yy[ky, kx]))
-        v = ExtractPupilVec(ph, ipmap)
-        w = np.abs(D.dot(v))
-        W = w.reshape(M,M)
-        pixy.append(np.argmax(W[:,mx]))
+            ph[ky, kx] = ang[0]*yy[ky, kx] + ang[1]*xx[ky, kx]
+    u = np.exp(1j*ph)
+    v = ExtractPupilVec(u, ipmap)  # pupil field vector
+    w = D.dot(v)  #  focal plane field vector
+    M = np.argmax(np.abs(w))
+    dpix = np.unravel_index(M, (ndpix, ndpix), 'C')
+    for my in range(ng):
+        for mx in range(ng):
+            sang = ( ang[0] + gy[my, mx], ang[1] + gx[my,mx] )  #sky angle
+            for ky in range(szp):
+                for kx in range(szp):
+                    ph[ky, kx] = sang[0]*yy[ky,kx] + sang[1]*xx[ky,kx]
+            u = np.exp(1j*ph)
+            v = ExtractPupilVec(u, ipmap)
+            w = D.dot(v)
+            gim[my, mx] = np.abs(w[M])
 
-    #fit lines
-    polyx = np.polyfit(pixx, alphx, 1)
-    polyy = np.polyfit(pixy, alphy, 1)
-    perfx = polyx[0]*mx + polyx[1]
-    perfy = polyy[0]*my + polyy[1]
-    return((perfx, perfy))
+    #fit a 2D Gaussian to gim to find the center
+    guess = [ng/2., ng/2., 3.]
+    out = MIZE(ChiSq2DGaussConstAmp, guess, args=(gim), method='CG', jac=True, options={'gtol': 0.01})
+    if not out['success']:
+        plt.figure(); plt.imshow(gim); plt.colorbar();
+        print()
+        print("out = ", out)
+        print("ang = ", ang)
+
+    pang = np.array((ang[0] + out['x'][0]*delta_g, # perfect angle
+                     ang[1] + out['x'][1]*delta_g))
+    return(pang, dpix, out['success'])
+
+
+#this works by finding the center of the images and regressing on the centers
+def DoNotUseFindPerfectAngle(ang, D, szp, ipmap):
+    assert len(ang) == 2
+    assert D.ndim == 2
+    nn = 4 # number of additional angles
+    nd = int(np.round(np.sqrt(D.shape[0])))
+    rr = 1.9*np.pi  # magnitude of change in angle for regression points
+    s = np.linspace(-.5, .5, szp)
+    (xx, yy) = np.meshgrid(s, s, indexing='xy'); del s
+    centers = []; angles = []
+    ang0 = np.array([0.,0.])
+    ph = np.zeros((szp, szp))
+    out = None
+    for k in np.arange(-1,nn):  #-1 corresponds to uperturbed center
+        if k == -1:
+            ang0[0] = ang[0]; ang0[1] = ang[1]
+        else:
+            th = 2.*np.pi*(.1 + k/nn)
+            ang0[0] = ang[0] + rr*np.cos(th)
+            ang0[1] = ang[1] + rr*np.sin(th)
+        for ky in range(szp):
+            for kx in range(szp):
+                ph[ky, kx] = ang0[0]*yy[ky, kx] + ang0[1]*xx[ky, kx]
+        u = np.exp(1j*ph)
+        v = ExtractPupilVec(u, ipmap)  # pupil field vector
+        w = D.dot(v)  #  focal plane field vector
+        (my, mx) = np.unravel_index(np.argmax(np.abs(w)), (nd, nd), order='C')
+        if k == -1:
+            mymx = (my, mx)  # desired center
+        W = w.reshape(nd,nd)
+        if False:  # k > -1:
+            guess = [my, mx, out['x'][2], out['x'][3]]
+        else:
+            guess = [my, mx, 3., np.max(np.abs(w))]
+        opts = {'gtol': 0.1}
+        out = MIZE(ChiSq2DGauss, guess, args=(np.abs(W)), method='CG', jac=True, options=opts)
+        if out['success']:
+            centers.append((out['x'][0], out['x'][1]))
+            angles.append((ang0))
+        else:  pass
+            #print('FindPerfectAngle: Optimization Failure.')
+            #plt.figure(); plt.imshow(np.abs(W)); 
+            #plt.title("abs(W)"); plt.colorbar();
+            #print("angles = ", ang0)
+            #print("out = "); print(out);
+            #assert False
+
+    # given angles and centers, do linear fits 
+    angles = np.array(angles)
+    centers = np.array(centers)
+    px = np.polyfit(angles[0,:], centers[0,:], 1)
+    py = np.polyfit(angles[1,:], centers[1,:], 1)
+    pang = np.array((px[0]*mymx[0] + px[1], py[0]*mymx[1] + py[1] ))  # perfect angle
+    return(pang)
 
 
 #---  Do not use.  It doesn't work very well.
@@ -201,7 +309,7 @@ def DoNotUseXXFindPerfectAngle(ang, D, szp, ipmap):
         if itcount == 0:
             mm = np.argmax(af)
             guess = [1.5, 2., phi[mm][0], phi[mm][1]]
-        out = MIZE(ChiSqGauss, guess, args=(af, phi), method='CG', jac=True)
+        out = MIZE(ChiSq1DGauss, guess, args=(af, phi), method='CG', jac=True)
         if out['success']:
             ang0 = (out['x'][0], out['x'][1])
             guess = out['x']
