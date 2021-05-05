@@ -43,7 +43,7 @@ def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
             dpxdsig[k] *= 4*sig  # deriv w.r.t. sig
             bb  = (np.sqrt(x[k])/a)/(2*np.pi*Icg*Icg)
             dpxda[k] = 2*a*(integral[k]*bb*q - px[k]/Icg)
-        return((px,dpxda,dpxdsig))
+        return(px, np.array([dpxda,dpxdsig]))
 
 #np.sign has the annoying property that np.sign(0) = 0
 #only works on scalars
@@ -144,9 +144,9 @@ def Frazinian(x, a, sigr, sigi, cc, n_angles=360, ignore_cc=False, return_derivs
     dpxdsigr *= sign_r
     dpxdsigi *= sign_i
     if ignore_cc:
-        return((px, dpxda, dpxdsigr, dpxdsigi))
+        return(px, np.array([dpxda, dpxdsigr, dpxdsigi]))
     else:
-        return((px, dpxda, dpxdsigr, dpxdsigi, dpxdcc))
+        return(px, np.array([dpxda, dpxdsigr, dpxdsigi, dpxdcc]))
 
 
 #this adds a constant (incoherent) intensity, c**2, to the ModifiedRician
@@ -178,7 +178,7 @@ def ModifiedRicianPlusConstant(x, c, a, sig, n_angles=360, return_derivs=False):
         dmrds = conv(dmrds, f, mode='same', method='fft')
         dfdcen = f*(x-cen)/ss**2
         dmrdcen = conv(mr, dfdcen, mode='same', method='fft')
-        return((mr, dmrdcen, dmrda, dmrds))
+        return(mr, np.array([dmrdcen, dmrda, dmrds]))
 
 #this calculates the misfit of the fitted function to the observed histogram.
 #  It also returns the gradient.  
@@ -212,7 +212,7 @@ def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
     ch = 0.5*np.sum( (ym - y)**2 )/scale
     g = np.zeros((len(v),))  # gradient values
     for k in range(len(v)):
-        g[k] = np.sum( (ym - y)*Q[k+1] )/scale
+        g[k] = np.sum( (ym - y)*Q[1][k+1] )/scale
 
     return((ch, g))
 
