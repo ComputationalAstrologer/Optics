@@ -93,68 +93,28 @@ nbins = 50
 sbh = []  # this will contain histograms of the stellar intensity
 edges = []  # bin edges
 cntrs = []  # bin centers
-for kl in range(nloc):
+for k in range(nloc):
     sb[k,:].sort()  # sort intensities in ascending order
     q = sb[k,: int((1- drop_frac)*nt)]
     edges.append(np.linspace(0, q[-1], nbins+1))
     cntrs.append(np.linspace(edges[-1][0], edges[-1][-2], nbins) + .5*(edges[-1][1] - edges[-1][0]))
-    sbh.append(np.histogram(q, bins=edges, density=True)[0])
-    rr = np.sqrt(angls[k][0]**2 + angls[k][1]**2)/2/np.pi
-    th = np.arctan2(angls[k][0], angls[k][1])*180/np.pi
+    sbh.append(np.histogram(q, bins=edges[-1], density=True)[0])
+    rr = np.sqrt(angls[-1][0]**2 + angls[-1][1]**2)/2/np.pi
+    th = np.arctan2(angls[-1][0], angls[-1][1])*180/np.pi
     tstring = 'd = ' + str( rr ) + ', th = ' +  str(th)
     #fit histogram
-    meanI = np.sum(cen[kl]*sth[kl])*(cen[kl][1] - cen[kl][0])
+    meanI = np.sum(cntrs[-1]*sbh[-1])*(cntrs[-1][1] - cntrs[-1][0])
     v = np.array([.2*np.sqrt(meanI), np.sqrt(meanI)]) 
-    out = MIZE(ChiSqHist, v, args=(sth[kl], cen[kl], ModifiedRician), method='CG', jac=True, bounds=None)
+    out = MIZE(ChiSqHist, v, args=(sbh[-1], cntrs[-1], ModifiedRician), method='CG', jac=True, bounds=None)
     v = out['x']
-    fit = ModifiedRician(cen[kl], v[0], v[1], return_derivs=False)
-    plt.figure(); plt.plot(cen[kl], sth[kl],'bo-', cen[kl], fit, 'rx:'); plt.title(tstring);
+    fit = ModifiedRician(cntrs[-1], v[0], v[1], return_derivs=False)
+    plt.figure(); plt.plot(cntrs[-1], sbh[-1],'bo-', cntrs[-1], fit, 'rx:'); plt.title(tstring);
 #    v = np.array([0.1*np.min([v[0],v[1]]) , v[0], v[1]])
 #    out = MIZE(ChiSqHist, v, args=(sth[kl], cen[kl], ModifiedRicianPlusConstant), method='CG', jac=True, bounds=None)
 #    v = out['x']
 #    fit = ModifiedRicianPlusConstant(cen[kl], v[0], v[1], v[2], return_derivs=False)
 #    plt.plot(cen[kl], fit, 'mp:');
 
-
-
-
-
-
-nt = wft.shape[0]  # number of time steps
-bp = contrast*np.abs(np.sum(np.exp(1j*wft), axis=1))**2  # planetary brightness at center
-st = np.exp(- np.var(wft, axis=1))  # Strehl raio according to the Ruze formula
-bs = np.zeros((nt,))  # star brightness at planet center
-fs = np.zeros((nt,)).astype('complex')  # electric field of star at planet pixel
-if load_measured_wavefronts:  # 'p' means 'predicted from measured WF'
-    stp = np.exp(- np.var(wfm, axis=1))
-    bsp = np.zeros((nt,))
-    fsp = np.zeros((nt,)).astype('complex')
-for tt in range(nt):
-    sfield = PM.EmbedPupilVec(np.exp(1j*wft[tt,:]), pmap, szp)
-    sfield -= np.ones(sfield.shape)  #  this includes a coronagraph effect
-    fs[tt] = np.sum(sfield*sp)
-    bs[tt] = np.real(fs[tt]*np.conj(fs[tt]))
-    if load_measured_wavefronts:
-        sfield = PM.EmbedPupilVec(np.exp(1j*wfm[tt,:]), pmap, szp)
-        sfield -= np.ones(sfield.shape)  #  this includes a coronagraph effect
-        fsp[tt] = np.sum(sfield*sp)
-        bsp[tt] = np.real(fsp[tt]*np.conj(fsp[tt]))
-
-
-
-
-
-
-v = out2['x']
-print("v = ", v)
-
-plt.plot(centers, fit, 'kp:');
-v = np.array([1.5*v[0],v[1]/2,2*v[1], 0.1])
-out1 = MIZE(ChiSqHist, v, args=(bsh, centers, Frazinian, scale), method='CG', jac=True, bounds=None)
-v = out1['x']
-print("v = ", v)
-fit = Frazinian(centers, v[0], v[1], v[2], v[3], ignore_cc=False, return_derivs=False)
-plt.plot(centers, fit, 'rx:');
 
 
 
