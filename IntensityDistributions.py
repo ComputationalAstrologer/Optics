@@ -211,8 +211,8 @@ def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
     ym = Q[0]  # modeled histogram values
     ch = 0.5*np.sum( (ym - y)**2 )/scale
     g = np.zeros((len(v),))  # gradient values
-    for k in range(len(v)):
-        g[k] = np.sum( (ym - y)*Q[1][k+1] )/scale
+    for k in range(len(v)):  # Q[1] contains the gradient vectors
+        g[k] = np.sum( (ym - y)*Q[1][k] )/scale
 
     return((ch, g))
 

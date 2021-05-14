@@ -182,7 +182,7 @@ def PropF4(u_start, x_start, params=parms, diagnostics=False):
         return({'x': x2d, 'field': field2d})
 
 
-MakeSysmatF4 = True
+MakeSysmatF4 = False
 if MakeSysmatF4:
     u = np.zeros((nppix,)).astype('complex')
     k=0; u[k] = 1.0 
