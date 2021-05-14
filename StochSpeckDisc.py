@@ -56,7 +56,7 @@ if LOAD:
 
 
 #locations for random sample of stellar field
-nloc = 5
+nloc = 2
 loc = []; angls = []; dpix=[]; 
 for k in range(nloc):  # this code block uses PM.FindPerfectAngle to adjust the input angles
     r = (np.random.rand()*7.5 + 0.5)*2*np.pi
@@ -78,14 +78,16 @@ phas = np.zeros((szp, szp)).astype('complex')
 for k in range(nloc):
     for ky in range(szp):
         for kx in range(szp):
-            phas[ky,kx] = np.exp( 1j*(angls[k][0]*yy[ky,kx] + angls[k][1]*xx[ky,kx]  ) )  # this ordering is correct for 'xy' indexing of np.meshgrid
-    pphasor[:,k] = PM.ExtractPupilVec(phas, ipmap)  #planet phasor
+            phas[ky,kx] = np.exp( 1j*(angls[k][0]*yy[ky,kx] + angls[k][1]*xx[ky,kx]) )  # this ordering is correct for 'xy' indexing of np.meshgrid
+    pphasor[:,k] = np.csingle( PM.ExtractPupilVec(phas, ipmap) ) #planet phasor
 
 for kt in range(nt):
-    for k in range(nloc):
-        sf[k, kt] = ( D.dot(wft[kt, :]) )[dpix[k]]  # stellar field
+    for k in range(nloc):  # use of single precision complex makes this loop much faster
+        tphasor = np.csingle(np.exp(1j*wft[kt,:]))  # turbulent phasor
+        ptphasor = np.csingle(tphasor*pphasor[:,k])  # 
+        sf[k, kt] = ( D.dot(tphasor) )[dpix[k]]  # stellar field
         sb[k, kt] = np.real( sf[k, kt]*np.conj(sf[k, kt]) )  # stellar intensity
-        pb[k, kt] =   contrast*np.abs(( D.dot(wft[kt,:]*pphasor[:,k]) )[dpix[k]])**2  #planet intensity
+        pb[k, kt] =   contrast*np.abs(( D.dot(ptphasor) )[dpix[k]])**2  #planet intensity
 
 #make histograms
 drop_frac = 0.05
