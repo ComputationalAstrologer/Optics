@@ -85,9 +85,9 @@ for kt in range(nt):
     for k in range(nloc):  # use of single precision complex makes this loop much faster
         tphasor = np.csingle(np.exp(1j*wft[kt,:]))  # turbulent phasor
         ptphasor = np.csingle(tphasor*pphasor[:,k])  # 
-        sf[k, kt] = ( D.dot(tphasor) )[dpix[k]]  # stellar field
+        sf[k, kt] = ( D[dpix[k],:].dot(tphasor) )  # stellar field
         sb[k, kt] = np.real( sf[k, kt]*np.conj(sf[k, kt]) )  # stellar intensity
-        pb[k, kt] =   contrast*np.abs(( D.dot(ptphasor) )[dpix[k]])**2  #planet intensity
+        pb[k, kt] =   contrast*np.abs(( D[dpix[k],:].dot(ptphasor) ))**2  #planet intensity
 
 #make histograms
 drop_frac = 0.05
