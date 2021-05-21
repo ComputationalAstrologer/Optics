@@ -16,7 +16,10 @@ from scipy.signal import convolve as conv
 #sig - the mean intensity of the random phasor is 2sig^2
 #n_angles - the number of points used to calculate the integral over angle
 #return_derivs - if True, also returns derivs w.r.t. 'a' and sig
-def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
+#
+#  This version sometimes has floating overflow issues.  Hence the 'Old' suffix
+#
+def ModifiedRicianOld(x, a, sig, n_angles=360, return_derivs=False):
     x = np.array(x)
     assert x.ndim == 1
     assert all(x >= 0.)
@@ -44,6 +47,34 @@ def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
             bb  = (np.sqrt(x[k])/a)/(2*np.pi*Icg*Icg)
             dpxda[k] = 2*a*(integral[k]*bb*q - px[k]/Icg)
         return(px, np.array([dpxda,dpxdsig]))
+
+#This version seeks to avoid floating point overflows by combining the exponential
+def ModifiedRician(x, a, sig, n_angles=360, return_derivs=False):
+    x = np.array(x)
+    assert x.ndim == 1
+    assert all(x >= 0.)
+    dth = 2*np.pi/n_angles
+    th = np.linspace(-np.pi + dth/2, np.pi - dth/2, n_angles)
+    cth = np.cos(th)
+    Icg = 2.*sig*sig
+    px = np.zeros(x.shape)
+    for k in range(len(x)):
+        u = (2*np.sqrt(x[k])*a*cth - x[k]  - a*a)/Icg
+        px[k] = dth*np.sum(np.exp(u))/(2.*np.pi*Icg)
+    if not return_derivs:
+        return(px)
+    else:
+        dpxda = np.zeros((len(x),))
+        dpxdsig = np.zeros((len(x),))
+        for k in range(len(x)):
+            u = (2.*np.sqrt(x[k])*a*cth - x[k]  - a*a)/Icg
+            dpxda[k] = dth*np.sum( (2.*np.sqrt(x[k])*cth - 2.*a)*np.exp(u)/Icg )/(2.*np.pi*Icg)
+            dpxdsig[k] = - px[k]/Icg
+            dpxdsig[k] += dth*np.sum( -(u/Icg)*np.exp(u) )/(2.*np.pi*Icg)
+        dpxdsig *= 4.*sig   #this is because the derivative calculated so far is with respect to Icg
+        return(px, np.array([dpxda,dpxdsig]))
+
+
 
 #np.sign has the annoying property that np.sign(0) = 0
 #only works on scalars
@@ -211,8 +242,8 @@ def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
     ym = Q[0]  # modeled histogram values
     ch = 0.5*np.sum( (ym - y)**2 )/scale
     g = np.zeros((len(v),))  # gradient values
-    for k in range(len(v)):  # Q[1] contains the gradient vectors
-        g[k] = np.sum( (ym - y)*Q[1][k] )/scale
+    for k in range(len(v)):
+        g[k] = np.sum( (ym - y)*Q[1][k+1] )/scale
 
     return((ch, g))
 
