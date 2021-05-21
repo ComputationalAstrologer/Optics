@@ -243,7 +243,7 @@ def ChiSqHist(v, y, centers, func, scale=None, ignore_cc=False):
     ch = 0.5*np.sum( (ym - y)**2 )/scale
     g = np.zeros((len(v),))  # gradient values
     for k in range(len(v)):
-        g[k] = np.sum( (ym - y)*Q[1][k+1] )/scale
+        g[k] = np.sum( (ym - y)*Q[1][k] )/scale
 
     return((ch, g))
 
