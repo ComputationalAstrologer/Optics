@@ -12,6 +12,7 @@ transforms Hermitian.
 """
 
 import numpy as np
+from scipy.integrate import quad
 
 """
 Normal PSD fucntion (1D)
@@ -67,12 +68,47 @@ otS - list of outer scale values
 alpha - list of alpha values
 sigSr - list of sigSR values
 """
-def sumVonKarmanPSD(k, amp, beta, inS, otS, alpha, sigSR):
+def sumVonKarmanPSD(k, amp, beta, inS, otS, alpha, sigSR, base=1.e-9):
     assert (len(amp) == len(beta) == len(inS) == len(otS) == len(alpha) == len(sigSR))
-    psd = 0.
+    psd = base
     for l in range(len(beta)):
         psd += amp[l]*VonKarmanPSD(k, beta[l], inS[l], otS[l], alpha[l], sigSR[l])
     return(psd)
+"""
+This integrates the 1D or 2D PSD to get the RMS as a function of the maximum spatial
+  frequency considered [Kmax - this has nothing to with Kmax in the function 
+  VonKarmanPSD()].  Kmin sets the lower limit of the integration
+Note that in 1D: RMS(Kmax) = 2*int_Kmin^Kmax PSD(k) dk  (Kmin, Kmax  > 0)
+                           = 2*int_{log(Kmin)}^{log(Kmax)} PSD(exp(q)) exp(q) dq,
+    where q = log(k), k>0 and log is the natural log
+    In 2D:  RMS(Kmax) = 2pi*int_Kmin^Kmax PSD(k) k dk
+                      = 2pi*int_{log(Kmin)}^{log(Kmax)} PSD^2(exp(q)) exp(2q) dq
+        The 2D PSD is the square of the 1D PSD for isotropic media (I think)
+Since k ranges over orders of magnitude, the log form the integral seems
+    more suited to the problem.
+Note that the units of k are [1/meters] so 1/(2.5 cm) = (1/0.025 m) = 40 m^-1
+fcn  is a function handle that provides access to the function to be integrated.
+    It is probably most convenient to make this a lambda function
+npts - the number of Kmax points
+maxKmax - is the Kmax value for the last integration
+Kmin - smallest spatial frequency considered in the integral
+"""
+def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=40., ndim=1):
+    assert ( (ndim == 1) or (ndim == 2) )
+    lowlim = np.log(Kmin)  #  lower limit of integration
+    logKmax = np.linspace(np.log(Kmin), np.log(maxKmax), npts)  # integration end points
+    if ndim == 1:
+        f = lambda t:       2*np.exp(  t)*fcn(np.exp(t))
+    else:
+        f = lambda t: 2*np.pi*np.exp(2*t)*(fcn(np.exp(t))**2)
+    RMS = np.zeros((npts,))
+    natLog2Log10 = np.log10(np.e)  # factor to convert natural logs to 10-based logs
+    for nn in (1 + np.arange(npts-1)):
+        RMS[nn] = quad(f, lowlim, logKmax[nn])[0]
+
+    return((RMS, natLog2Log10*logKmax))
+
+
 """
 This samples a PSD from an input sequence assuming an
   exponential pdf: p(s) = (1/q)exp(-s/q) where q is the mean
