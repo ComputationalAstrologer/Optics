@@ -77,18 +77,29 @@ def sumVonKarmanPSD(k, amp, beta, inS, otS, alpha, sigSR, base=1.e-9):
 """
 This integrates the 1D or 2D PSD to get the RMS as a function of the maximum spatial
   frequency considered [Kmax - this has nothing to with Kmax in the function 
-  VonKarmanPSD()].  Kmin sets the lower limit of the integration
-Note that in 1D: RMS(Kmax) = 2*int_Kmin^Kmax PSD(k) dk  (Kmin, Kmax  > 0)
-                           = 2*int_{log(Kmin)}^{log(Kmax)} PSD(exp(q)) exp(q) dq,
-    where q = log(k), k>0 and log is the natural log
-    In 2D:  RMS(Kmax) = 2pi*int_Kmin^Kmax PSD(k) k dk
-                      = 2pi*int_{log(Kmin)}^{log(Kmax)} PSD^2(exp(q)) exp(2q) dq
-        The 2D PSD is the square of the 1D PSD for isotropic media (I think)
+  VonKarmanPSD()].  Kmin sets the lower limit of the integration.
+
+In order to transform the integral to (natural) log space, where q = log(k),
+  we first have to make a change of variables.
+  For a 1D PSF (not a radial PSF, but a truly 1D object):
+    Let f1(k) be the 1D PSD (which we do not have from the MagAO-X team)
+    and let g1(q) be the 1D PSD in log space.  Then, the required change of
+    variables is given by the condition    f1(k) dk = g1(q) dq -> g1(q) = f1(k)|dk/dq|
+  For a 2D radial PSF:
+    Let f2(k) be the 2D radial PSF where k^2 = kx^2 + ky^2 and let g2(q) be the 2D PSD in log space
+    We can find g2(q) via the condition f2(k) k dk = g2(q) q dq -->
+             g2(q) = f2(k) (k/q) |dk/dq| -> g2(q) = f2(exp(q)) (1/q) exp(2q)
+  
+  
+Note that in 1D: RMS^2(Kmax) = 2*int_Kmin^Kmax f1(k) dk  (Kmin, Kmax  > 0)
+                           = 2*int_{log(Kmin)}^{log(Kmax)} f1(exp(q)) exp(q) dq,
+    In 2D:  RMS^2(Kmax) = 2pi*int_Kmin^Kmax f2(k) k dk
+                        = 2pi*int_{log(Kmin)}^{log(Kmax)} f2(exp(q)) exp(2q) dq
 Since k ranges over orders of magnitude, the log form the integral seems
     more suited to the problem.
 Note that the units of k are [1/meters] so 1/(2.5 cm) = (1/0.025 m) = 40 m^-1
 fcn  is a function handle that provides access to the function to be integrated.
-    It is probably most convenient to make this a lambda function
+    It is probably most convenient to make this a Python 'lambda' function
 npts - the number of Kmax points
 maxKmax - is the Kmax value for the last integration
 Kmin - smallest spatial frequency considered in the integral
@@ -100,13 +111,14 @@ def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=40., ndim=1):
     if ndim == 1:
         f = lambda t:       2*np.exp(  t)*fcn(np.exp(t))
     else:
-        f = lambda t: 2*np.pi*np.exp(2*t)*(fcn(np.exp(t))**2)
-    RMS = np.zeros((npts,))
+        f = lambda t: 2*np.pi*np.exp(2*t)*(fcn(np.exp(t)))
+    RMSsq = np.zeros((npts,))
     natLog2Log10 = np.log10(np.e)  # factor to convert natural logs to 10-based logs
     for nn in (1 + np.arange(npts-1)):
-        RMS[nn] = quad(f, lowlim, logKmax[nn])[0]
+        RMSsq[nn] = quad(f, lowlim, logKmax[nn])[0]
+    RMSsq[0] = RMSsq[1]  # don't want the first value to be zero
 
-    return((RMS, natLog2Log10*logKmax))
+    return((RMSsq, natLog2Log10*logKmax))
 
 
 """
