@@ -129,19 +129,67 @@ L - length of the segment (centered on zero)
 Fmax - max spatial frequency of psd
 n - the number of points in the segment
 """
-def SampleExpPSD1D(psd, Fmax, L, n):
-    lp = len(psd)
-    f = np.linspace(0, Fmax, lp)  # spatial freq grid
-    x = np.linspace(-L/2, L/2, n)
-    surf = np.zeros(x.shape)
-    for k in (1 + np.arange(lp-1)): #don't include 0 spatial freq
-        pwr = np.random.exponential(psd[k])
-        camp = np.sqrt(pwr)*np.exp(1j*2*np.pi*np.random.rand())
-        ramp = np.real(camp)
-        iamp = np.imag(camp)
-        kf = 2*np.pi*f[k]  # spatial wavenumber
-        surf += 2*( ramp*np.cos(kf*x) + iamp*np.sin(kf*x) )
+#def SampleExpPSD1D(psd, Fmax, L, n):
+#    lp = len(psd)
+#    f = np.linspace(0, Fmax, lp)  # spatial freq grid
+#    x = np.linspace(-L/2, L/2, n)
+#    surf = np.zeros(x.shape)
+#    for k in (1 + np.arange(lp-1)): #don't include 0 spatial freq
+
+#        pwr = np.random.exponential(psd[k])  ^^^ need to include "the dK"
+
+#        camp = np.sqrt(pwr)*np.exp(1j*2*np.pi*np.random.rand())
+#        ramp = np.real(camp)
+#        iamp = np.imag(camp)
+#        kf = 2*np.pi*f[k]  # spatial wavenumber
+#        surf += 2*( ramp*np.cos(kf*x) + iamp*np.sin(kf*x) )
+#    return(surf)
+
+"""
+This is similar to SampleExpPSD1D, except that is it 2D.
+psd - the input psd - assumed to a radial function. 
+     -  units assumed to be nm^2 m^2
+R - the radius of the surface (units meters)
+gridspace - spacing of grid points on surface (units meters)
+Kmin - minimum spatial frequency (units 1/m)
+Kmax - maximum spatial frequency (units 1/m)
+     - make sure this is resolved in terms of the gridspace parameter
+dK - spatial fequency imcrement
+"""
+def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK):
+    #create spatial grid
+    qq = np.linspace(-R, R, int(2*R/gridspace))
+    qq = np.meshgrid(qq, qq)
+    x = qq[0]; y = qq[1];  # x and y are 2D arrays of the spatial coords
+    circle = np.ones(x.shape)
+    nk = x.shape[0]
+    for l in range(nk):
+        for m in range(nk):
+            if x[m,l]**2 + y[m,l]**2 > R*R:
+                circle[m,l] = 0.
+    surf = np.zeros(x.shape)  # random error surface
+    #create spatial frequency grid
+    qq = np.linspace(-Kmax, Kmax, int(2*Kmax/dK))
+    qq = np.meshgrid(qq,qq)
+    u = qq[0]; v = qq[1]  # u and v are 2D array of the spatial frequencies
+    del(qq)
+    nk = u.shape[0]  # length of spatial frequency grid
+    tp = 2*np.pi
+    for l in range(nk):
+        for m in range(int(nk/2)):  # only consider the lower 1/2 of the freq plane - this is where we implicitly assume the surface error is real-valued
+            ak = np.sqrt(v[m,l]**2 + u[m,l]**2)  # |k|
+            if ( (ak < Kmin) or (ak > Kmax)):
+                continue
+            cf = np.cos(tp*u[m,l]*x + tp*v[m,l]*y)
+            sf = np.sin(tp*u[m,l]*x + tp*v[m,l]*y)
+            pwr = np.random.exponential(psd(ak))*dK*dK
+            camp = np.sqrt(pwr)*np.exp(1j*2*np.pi*np.random.rand())  # complex amplitude 
+            ramp = np.real(camp)
+            iamp = np.imag(camp)
+            surf += 2*(ramp*cf + iamp*sf)
+    surf *= circle
     return(surf)
+
 
 """
 This loads Jhen's PSD parameters
