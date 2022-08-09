@@ -34,10 +34,11 @@ def MyGaussian1D(Fmax, h, c, sig, n):
 This surface roughness function is from Jhen Lumbres' thesis.
 sigSR has units of nm
 The default values for Kmax and Kmin are:
-   Kmax = (1/2.5 um) = 4.e5 m^-1 and Kmin = (1/85 um) = 1.1765e4 m^-1, resp.
+   Kmax = 1/(2.5 um) = 4.e-4 nm^-1 and 
+   Kmin = 1/(85 um) = 1.1765e-5 nm^-1, resp.
 The output units are nm^2m^2
 """
-def BetaSR(sigSR, Kmin=1.1765e4, Kmax=4.0e5):
+def BetaSR(sigSR, Kmin=1.1765e-5, Kmax=4.0e-4):
     return( (sigSR*sigSR/np.pi)/(Kmax*Kmax - Kmin*Kmin) )
 
 """
@@ -104,7 +105,7 @@ npts - the number of Kmax points
 maxKmax - is the Kmax value for the last integration
 Kmin - smallest spatial frequency considered in the integral
 """
-def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=40., ndim=1):
+def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=40., ndim=2):
     assert ( (ndim == 1) or (ndim == 2) )
     lowlim = np.log(Kmin)  #  lower limit of integration
     logKmax = np.linspace(np.log(Kmin), np.log(maxKmax), npts)  # integration end points
@@ -197,9 +198,9 @@ This loads Jhen's PSD parameters
 #OAP PSDs - output units are nm^2m^2
 amp   = [1., 1., 1.]
 alpha = [3.029, -3.103, 0.668]
-beta  = [329.3, 1.6e-12, 3.5e-5]  # units are nm*m
+beta  = [329.3, 1.6e-12, 3.49e-5]  # units are nm*m
 otS   = [0.019, 16., 0.024]  # units are m
-inS   = [3.e-6, 4.29e-3, 1.32e-4]  # units are m
+inS   = [-2.e-6, 4.29e-3, 1.32e-4]  # units are m
 sigSR = [5.e-6, 5.e-6, 5.5e-1]  # units are nm
 
 
