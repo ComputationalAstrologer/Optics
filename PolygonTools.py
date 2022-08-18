@@ -77,22 +77,25 @@ def CutCircle(square_size, circ_diam, gtORgeq = 'gt'):
 """
 This is a class that handles various functions for a regular hexagon tiling.
 R - the radius of the circle that inscribes a hex segment
+Nx - the number of tiles in the x-direction
+Ny - the number of tiles in the y-direction
 EdgeWidth - the width (within a given segment) of the transition to the neighboring segment (same units as R!)
   If set to 0, there is no transition.  If > 0, at the edge of the segment the height will be the 
   mean of the segment and its neighbor
-Nx - the number of tiles in the x-direction
-Ny - the number of tiles in the y-direction
+HeightFile - filename containing height map.  If None, random heights will be assigned
 """
 
 
 class HexagonTile():
-    def __init__(self, R=1.0, EdgeWidth=0., Nx=3, Ny=3):
-        assert EdgeWidth >= 0.
+    def __init__(self, R=1.0, Nx=3, Ny=3, EdgeWidth=0., HeightFile=None):
+        assert EdgeWidth >= 0. and EdgeWidth < np.sqrt(3)*R/2
         self.R = R
         self.ew = EdgeWidth
         self.Nhex = Nx*Ny
+        self.HeightFile = HeightFile
         self.Index = {'xy2lin': {}, 'lin2xy': {}}  # 2d and 1d index maps
         self.Seg = {}  # info about individual segments, indexed by the values in self.Index['linind']
+        self.Rmax2 = 0.  # square of maximum radius to be on grid
         
         #find the center for each hex in the grid
         if np.mod(Nx, 2) > 0:
@@ -119,41 +122,75 @@ class HexagonTile():
             else:
                 ycen = xyind[1]*3*R/2
             self.Seg[k]['center'] = (xcen, ycen)
-            self.Seg[k]['neighbors'] = np.zeros(6).astype('int')  # one neighbor for each sector
+            if self.Rmax2 < xcen*xcen + ycen*ycen:
+                self.Rmax2 = xcen*xcen + ycen*ycen
+            self.Rmax2 = (self.R + np.sqrt(self.Rmax2))**2
 
+            #initialize the other dicts with info about each segment
+            self.Seg[k]['neighbors'] = np.zeros(6).astype('int')  # one neighbor for each sector
+            self.Seg[k]['height'] = 0.  # height of the segment (excluding the edge)
+
+        #fill out the neighbors dict
         for k in self.Index['lin2xy']:
             xyind = self.Index['lin2xy'][k]
 
             for ks in range(6):  # loop over sectors
                 mx = xyind[0]
                 my = xyind[1]
-
-
                 if ks == 0:  # upper right
-                        mx += 1
-                        if np.mod(mx, 2) == 1:
-                            my += 1
+                     if np.mod(mx, 2) > 0: my += 1  # this step must be done before modifying mx!
+                     mx += 1
                 elif ks == 1:  # above
-                        my += 1
+                     my += 1
                 elif ks == 2: # upper left
-                        mx -= 1
-                        if np.mod(mx, 2) == 1:
-                            my += 1
+                     if np.mod(mx, 2) > 0: my += 1
+                     mx -= 1
                 elif ks == 3: # lower left
-                        mx -= 1
-                        if np.mod(mx,2) == 0:
-                            my -= 1
+                     if np.mod(mx,2) < 1: my -= 1
+                     mx -= 1
                 elif ks == 4:  # below
-                        my -= 1
+                     my -= 1
                 elif ks == 5:          # lower right
-                    mx += 1
-                    if np.mod(mx,2) == 0:
-                        my -= 1
+                     if np.mod(mx,2) < 1: my -= 1
+                     mx += 1
                 else:
-                    print('case error');
-                    assert False
+                     print('case error');
+                     assert False
                 if (mx, my) in self.Index['xy2lin']:
-                    self.Seg[k]['neighbors'][ks] = self.Index['xy2lin'][(mx, my)]
+                     self.Seg[k]['neighbors'][ks] = self.Index['xy2lin'][(mx, my)]
                 else:  # no neighbor for that sector
-                    self.Seg[k]['neighbors'][ks] = -1  # no neighbor code
+                     self.Seg[k]['neighbors'][ks] = -1  # no neighbor code
         return(None)
+
+    #This calculates the height corresponding to a given point, including the edge
+    #point - any 2-element array-like object, e.g., (x,y), [x,y], where x and y
+    #  specify the point's location.  Same units as the 'R' and 'EdgeWidth' 
+    #  arguments of the constructor 
+    #I WILL VECTORIZE THIS LATER
+    def CalcPointHeight(self, point):
+        pt = np.array(point)
+        if pt[0]**2 + pt[1]**2 >= self.Rmax2:  height = 0.
+        #find the segment center to which pt is closest
+        segid = -1  #
+        d2 = self.Rmax2
+        for k in self.Index['lin2xy']:
+            ct = self.Seg[k]['center']
+            dt2 = (pt[0] - ct[0])**2 + (pt[1] - ct[1])**2
+            if dt2 < d2: 
+                d2 = dt2
+                segid = k
+        
+        
+        return(height)
+
+
+    #This reads in the HeightFile or assigns random heights
+    def GetHexHeights(self):
+        if self.HeightFile is None:  # fill this out randomly
+            for k in self.Index['lin2xy']:
+                self.Seg[k]['height'] = np.random.randn()
+        else:
+            print('HeightFile kwarg under construction!')
+            assert False
+        return(None)
+
