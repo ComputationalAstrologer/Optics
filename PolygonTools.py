@@ -8,6 +8,8 @@ Created on Thu Aug 27 16:06:24 2020
 
 import numpy as np
 import matplotlib.pyplot as plt
+from os.path import join as pathjoin
+from astropy.io import fits
 
 
 #This returns a 2D function that is 1 inside the polygon and 0 otherwise
@@ -84,16 +86,18 @@ EdgeWidth - the width (within a given segment) of the transition to the neighbor
   If set to 0, there is no transition.  If > 0, at the edge of the segment the height will be the 
   mean of the segment and its neighbor
 HeightFile - filename containing height map.  If None, random heights will be assigned
+HeightFilePath - path to the directory containing HeightFile.  None corresponds to "./"
 """
 
 #=======================Start HexagonTile Class================================
 class HexagonTile():
-    def __init__(self, R=1.0, Nx=3, Ny=3, EdgeWidth=0., HeightFile=None):
+    def __init__(self, R=1.0, Nx=3, Ny=3, EdgeWidth=0., HeightFile=None, HeightFilePath=None):
         assert EdgeWidth >= 0. and EdgeWidth < np.sqrt(3)*R/2
         self.R = R
         self.ew = EdgeWidth
         self.Nhex = Nx*Ny
         self.HeightFile = HeightFile
+        self.HFPath = HeightFilePath
         self.Index = {'xy2lin': {}, 'lin2xy': {}}  # 2d and 1d index maps
         self.Seg = {}  # info about individual segments, indexed by the values in self.Index['linind']
         self.Rmax = 0.  # maximum radius to be on grid
@@ -230,13 +234,33 @@ class HexagonTile():
         if seg == -1:
             return(0.0)
 
-    #This reads in the HeightFile or assigns random heights
+    #This reads in the HeightFile to get the segment heights or assigns random heights
     def GetHexHeights(self):
         if self.HeightFile is None:  # fill this out randomly
             for k in self.Index['lin2xy']:
                 self.Seg[k]['height'] = np.random.rand()
+            return(None)
+        elif self.HeightFile == 'cmcMask_v6_200nm_sag.fits':
+            if self.HFPath is None:
+                fname = self.HeightFile
+            else:
+                fname = pathjoin(self.HFPath, self.HeightFile)
+            hm = fits.getdata(fname)
+            assert hm.shape == (2056, 2056)
+            s = np.linspace(-205.6, 205.6, 2056)  # 1D spatial coord (um), 0.2 um per pixel
+            dgrid = s[1] - s[0]  # grid spacing
+
+            for k in self.Index['lin2xy']:
+                hc = self.Seg[k]['center']  # hex center
+                px = np.rint( (hc[0] - s[0])/dgrid ).astype('int')
+                py = np.rint( (hc[1] - s[0])/dgrid ).astype('int')
+                py = hm.shape[1]-1 - py  # reverse the up/down orientation
+                if (px < 0) or (px > hm.shape[0]-1) or (py < 0) or (py > hm.shape[1]-1):
+                    self.Seg[k]['height'] = 0.0
+                else:
+                    self.Seg[k]['height'] = hm[py, px]
         else:
-            print('HeightFile kwarg under construction!')
+            print('I dont know how to handle the file: ', self.HeightFile)
             assert False
         return(None)
 
@@ -254,9 +278,10 @@ class HexagonTile():
 #================= end of HexagonTile Class  ==================================
 
 #This provides an example of using the HexagonTile Class
-def HexTileExample(N=5, R=1/3, EdgeWidth=0.):  # full width of grid is about 2*R*N
-    HT =  HexagonTile(R=R, Nx=N, Ny=N, EdgeWidth=EdgeWidth, HeightFile=None)
-    s = np.linspace(-1.1*R*N, 1.1*R*N, 100*N)
+#res - a resolution scaling factor
+def HexTileExample(res=100, N=5, R=1/3, EdgeWidth=0., HeightFile=None, HeightFilePath=None):  # full width of grid is about 2*R*N
+    HT =  HexagonTile(R=R, Nx=N, Ny=N, EdgeWidth=EdgeWidth, HeightFile=HeightFile, HeightFilePath=HeightFilePath)
+    s = np.linspace(-1.1*R*N, 1.1*R*N, res*N)
     ext = [min(s), max(s), min(s), max(s)]
     (xx, yy) = np.meshgrid(s,-s)
     hmap = np.zeros(xx.shape)
@@ -266,4 +291,19 @@ def HexTileExample(N=5, R=1/3, EdgeWidth=0.):  # full width of grid is about 2*R
     plt.figure();
     plt.imshow(hmap, extent=ext); plt.colorbar(); plt.xlabel('x'); plt.ylabel('y'); plt.title('HexagonTile Example (height map)');
     return((HT, hmap))
-    
+
+#This is for the specific case of cmcMask_v6_200nm_sag.fits
+#  the width of the file is 2056*(0.2 um) = 411.2 um
+#N - grid is N-by-N segments.  N=27 is needed to cover the whole grid, but a smaller number can be used
+#res - a parameter that is proportional to the number of points in the height map
+#    res=40 is good enough to see the hex segments, but resolving the transition between segments
+#    requires res > 400 (800 is nice!), but the run time is proportional to res^2.  One option is reduce N and 
+#    only model the central part of the mask.  Note that N=5, res=800 takes about 8.5 min on my machine
+def cmcMask_v6(N=27, res=40):
+    R = 15.3/np.sqrt(3)  # [um] edge-to-opposite edge distance is 15.3 um
+    EdgeWidth = 0.1 # [um]
+    fn = 'cmcMask_v6_200nm_sag.fits'
+    pth = './'
+    (HT, hmap) = HexTileExample(res=res, N=N, R=R, EdgeWidth=EdgeWidth, HeightFile=fn, HeightFilePath=pth)
+    return((HT, hmap))
+
