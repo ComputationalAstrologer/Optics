@@ -119,9 +119,9 @@ class HexagonTile():
             xyind = self.Index['lin2xy'][k]
             xcen = xyind[0]*3*R/2
             if np.mod(xyind[0], 2) > 0:  # note: e.g., np.mod(-5,2) = 1
-                ycen = xyind[1]*3*R/2 + R
+                ycen = xyind[1]*np.sqrt(3)*R + R*np.sqrt(3)/2
             else:
-                ycen = xyind[1]*3*R/2
+                ycen = xyind[1]*np.sqrt(3)*R
             self.Seg[k]['center'] = (xcen, ycen)
             if self.Rmax < np.sqrt(xcen*xcen + ycen*ycen):
                 self.Rmax = np.sqrt(xcen*xcen + ycen*ycen)
@@ -175,47 +175,60 @@ class HexagonTile():
     #  with the closest center (due to convexity)
     #I WILL VECTORIZE THIS LATER
     def CalcPointHeight(self, point):
-        hs = self.R*np.sqrt(3)/2  # distance from segment center to a side
-        height = 0.
         pt = np.array(point)
-        if np.sqrt(pt[0]**2 + pt[1]**2) >= self.Rmax:  # point is outside the grid
-            return(height)
-        #find the segment center to which pt is closest
-        segid = -1  #
-        d2 = self.Rmax
-        for k in self.Index['lin2xy']:
-            ct = self.Seg[k]['center']
-            dt2 = np.sqrt((pt[0] - ct[0])**2 + (pt[1] - ct[1])**2)
-            if dt2 < d2: 
-                d2 = dt2
-                segid = k  # the point is inside segment sedig, unless segment segid is on the border
+        #first, figure out which (if any) segment pt belongs
+        rpt = np.sqrt(pt[0]**2 + pt[1]**2)
+        if rpt >= self.Rmax: return(0.0)
 
-        #first, figure out which sector it's in - needed for border pixels and treating edges
-        xc = pt[0] - self.Seg[segid]['center'][0]
-        yc = pt[1] - self.Seg[segid]['center'][1]
-        dc = np.sqrt(xc*xc + yc*yc)
-        ang = np.arctan2(yc, xc)
-        if ang < 0: ang += 2*np.pi
-        sector = np.floor( ang/(np.pi/3) ).astype('int')
-        
-        #now determine where the point is in relationship to the sector boundary
-        cbisang = np.cos(ang - sector*np.pi/3 - np.pi/6)  # cosine of the angle between center-point line and sector bisector line
-        dproj = dc*cbisang  # projected distance along sector bisector
-        if dproj > hs:
-            height = 0.  # point is outside of segment, which only happens on border segments because segid is the one closest to the point
-        elif dproj <= (hs - self.ew):  # point is in interior of segment
-            return(self.Seg[segid]['height'])
-        else: #complicated edge region case!
-            nabe = self.Seg[segid]['neighbors'][sector]
-            dq = dproj - (hs - self.ew)
-            if nabe == -1:  # no neighbor
-                nheight = 0.
-            else:
-                nheight = self.Seg[nabe]['height']  # height of neighbor
-                mheight = 0.5*(nheight + self.Seg[segid]['height'])  # height at sector boundary
-                height = self.Seg[segid]['height'] + (dq/self.ew)*(mheight - self.Seg[segid]['height'])
-        return(height)
+        edgedist = self.R*np.sqrt(3)/2  # this is the distance from the segment center to the center of one of its edges
+        #determine grid spacing parameter.  this only works if the hex segments have 2 edged parallel to the x-axis.
+        k = self.Index['xy2lin'][(0,0)]; c0 = self.Seg[k]['center']; k = -1
+        dgridX = self.R*3/2; dgridY = self.R*np.sqrt(3)
 
+        #determine the 'pixel number' of pt as if the grid were square
+        px = np.rint( (pt[0] - c0[0])/dgridX ).astype('int')
+        py = np.rint( (pt[1] - c0[1])/dgridY ).astype('int')
+
+        #see which segment (if any) pt is in
+        searchind = [(0,  0), ( 0, -1), ( 1, -1),  # put (0,0) first, since that is the most likely
+                     (-1, 0), (-1, -1), ( 1,  0),
+                     (-1, 1), ( 0,  1), ( 1,  1)]
+        searchind = np.array(searchind) + np.array((px,py))
+        seg = -1  # corresponds to pt not being inside any segment
+        for si in searchind:
+            if (si[0], si[1]) in self.Index['xy2lin']:
+                k = self.Index['xy2lin'][(si[0], si[1])]
+            else: 
+                continue  # (si[0], si[1]) is not a valid segment id
+            #  pt is inside segment k if it is not too far from the center within its sector
+            xc = pt[0] - self.Seg[k]['center'][0]
+            yc = pt[1] - self.Seg[k]['center'][1]
+            dc = np.sqrt(xc*xc + yc*yc)  # distance from segment center
+            if dc > self.R:
+                continue
+            ang = np.arctan2(yc, xc)
+            if ang < 0: ang += 2*np.pi
+            sector = np.floor( ang/(np.pi/3) ).astype('int')
+            cbisang = np.cos(ang - sector*np.pi/3 - np.pi/6)  # cosine of the angle between center-point line and sector bisector line
+            dproj = dc*cbisang  # projected distance along sector bisector
+            if dproj > edgedist:
+                seg = -1
+            else:  # it is inside segment k!  But is it within the edge region?
+                seg = k
+                if dproj <= edgedist - self.ew:  # not within the edge region
+                    return(self.Seg[seg]['height'])
+                else: # within the edge region
+                    nabe = self.Seg[seg]['neighbors'][sector]
+                    if nabe == -1:
+                        nheight = 0. # no neighbor
+                    else:
+                        nheight = self.Seg[nabe]['height']  # height of neighbor
+                mheight = 0.5*(nheight + self.Seg[seg]['height'])  # height at sector boundary
+                dq = dproj - (edgedist - self.ew)
+                height = self.Seg[seg]['height'] + (dq/self.ew)*(mheight - self.Seg[seg]['height'])
+                return(height)
+        if seg == -1:
+            return(0.0)
 
     #This reads in the HeightFile or assigns random heights
     def GetHexHeights(self):
@@ -241,8 +254,7 @@ class HexagonTile():
 #================= end of HexagonTile Class  ==================================
 
 #This provides an example of using the HexagonTile Class
-def HexTileExample(N=5, R=1/3):  # full width of grid is about 2*R*N
-    EdgeWidth = 0.
+def HexTileExample(N=5, R=1/3, EdgeWidth=0.):  # full width of grid is about 2*R*N
     HT =  HexagonTile(R=R, Nx=N, Ny=N, EdgeWidth=EdgeWidth, HeightFile=None)
     s = np.linspace(-1.1*R*N, 1.1*R*N, 100*N)
     ext = [min(s), max(s), min(s), max(s)]
