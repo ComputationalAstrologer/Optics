@@ -13,6 +13,7 @@ transforms Hermitian.
 
 import numpy as np
 from scipy.integrate import quad
+import cupy as cp
 
 """
 Normal PSD fucntion (1D)
@@ -157,38 +158,44 @@ Kmax - maximum spatial frequency (units 1/m)
      - make sure this is resolved in terms of the gridspace parameter
 dK - spatial fequency imcrement
 """
-def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK):
+def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, useCUPY=False):
+    if useCUPY:
+        pp = cp
+    else:
+        pp = np
     #create spatial grid
-    qq = np.linspace(-R, R, int(2*R/gridspace))
-    qq = np.meshgrid(qq, qq)
+    qq = pp.linspace(-R, R, int(2*R/gridspace))
+    qq = pp.meshgrid(qq, qq)
     x = qq[0]; y = qq[1];  # x and y are 2D arrays of the spatial coords
-    circle = np.ones(x.shape)
+    circle = pp.ones(x.shape)
     nk = x.shape[0]
     for l in range(nk):
         for m in range(nk):
             if x[m,l]**2 + y[m,l]**2 > R*R:
                 circle[m,l] = 0.
-    surf = np.zeros(x.shape)  # random error surface
+    surf = pp.zeros(x.shape)  # random error surface
     #create spatial frequency grid
-    qq = np.linspace(-Kmax, Kmax, int(2*Kmax/dK))
-    qq = np.meshgrid(qq,qq)
+    qq = pp.linspace(-Kmax, Kmax, int(2*Kmax/dK))
+    qq = pp.meshgrid(qq,qq)
     u = qq[0]; v = qq[1]  # u and v are 2D array of the spatial frequencies
     del(qq)
     nk = u.shape[0]  # length of spatial frequency grid
-    tp = 2*np.pi
+    tp = 2*pp.pi
     for l in range(nk):
         for m in range(int(nk/2)):  # only consider the lower 1/2 of the freq plane - this is where we implicitly assume the surface error is real-valued
-            ak = np.sqrt(v[m,l]**2 + u[m,l]**2)  # |k|
+            ak = pp.sqrt(v[m,l]**2 + u[m,l]**2)  # |k|
             if ( (ak < Kmin) or (ak > Kmax)):
                 continue
-            cf = np.cos(tp*u[m,l]*x + tp*v[m,l]*y)
-            sf = np.sin(tp*u[m,l]*x + tp*v[m,l]*y)
-            pwr = np.random.exponential(psd(ak))*dK*dK
-            camp = np.sqrt(pwr)*np.exp(1j*2*np.pi*np.random.rand())  # complex amplitude 
-            ramp = np.real(camp)
-            iamp = np.imag(camp)
+            cf = pp.cos(tp*u[m,l]*x + tp*v[m,l]*y)
+            sf = pp.sin(tp*u[m,l]*x + tp*v[m,l]*y)
+            pwr = pp.random.exponential(psd(ak))*dK*dK
+            camp = pp.sqrt(pwr)*pp.exp(1j*2*pp.pi*pp.random.rand())  # complex amplitude 
+            ramp = pp.real(camp)
+            iamp = pp.imag(camp)
             surf += 2*(ramp*cf + iamp*sf)
     surf *= circle
+    if useCUPY:
+        surf = cp.asnumpy(surf)
     return(surf)
 
 
