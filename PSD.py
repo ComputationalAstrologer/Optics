@@ -203,13 +203,22 @@ def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, useCUPY=False):
 This loads Jhen's PSD parameters
 """
 #OAP PSDs - output units are nm^2m^2
-amp   = [1., 1., 1.]
-alpha = [3.029, -3.103, 0.668]
-beta  = [329.3, 1.6e-12, 3.49e-5]  # units are nm*m
-otS   = [0.019, 16., 0.024]  # units are m
-inS   = [-2.e-6, 4.29e-3, 1.32e-4]  # units are m
-sigSR = [5.e-6, 5.e-6, 5.5e-1]  # units are nm
-
+params = {'OAP5':
+  {'amp': [1., 1., 1.],
+   'alpha': [3.029, -3.103, 0.668],
+   'beta': [329.3, 1.6e-12, 3.49e-5],  # units are nm*m
+    'otS': [0.019, 16., 0.024],  # units are m
+    'inS': [-3.e-6, 4.29e-3, 1.32e-4],  # units are m
+   'sigSR': [5.e-6, 5.e-6, 5.5e-1]  # units are nm
+  },'M3' :
+   {'amp': [1., 1., 0.],
+    'alpha': [-27.924, 3.615, 0.],
+    'beta': [1.261e-10, 65.27 , 0.],  # units are nm*m
+    'otS': [0.42, 0.12, np.inf],  # units are m
+    'inS': [-1.31, 8.81e-5, 0.],  # units are m
+    'sigSR': [0.05, 0.37, 0.]  # units are nm
+    }
+}
 
 
 
