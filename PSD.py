@@ -106,7 +106,7 @@ npts - the number of Kmax points
 maxKmax - is the Kmax value for the last integration
 Kmin - smallest spatial frequency considered in the integral
 """
-def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=40., ndim=2):
+def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=4., ndim=2):
     assert ( (ndim == 1) or (ndim == 2) )
     lowlim = np.log(Kmin)  #  lower limit of integration
     logKmax = np.linspace(np.log(Kmin), np.log(maxKmax), npts)  # integration end points
@@ -209,14 +209,24 @@ params = {'OAP5':
    'beta': [329.3, 1.6e-12, 3.49e-5],  # units are nm*m
     'otS': [0.019, 16., 0.024],  # units are m
     'inS': [-3.e-6, 4.29e-3, 1.32e-4],  # units are m
-   'sigSR': [5.e-6, 5.e-6, 5.5e-1]  # units are nm
-  },'M3' :
+   'sigSR': [5.e-6, 5.e-6, 5.5e-1],  # units are nm
+   'base': 1.e-9  # units nm^2m^2
+  },'flat' :  # 50 mm flats, used for fold mirrors
+   {'amp': [1., 1., 1.],
+    'alpha': [3.284, 1.947, 2.827],
+    'beta': [1180., 0.02983 , 44.25],  # units are nm*m
+    'otS': [-0.017,-15., -5.7e-4],  # units are m
+    'inS': [0.0225, 0.00335, 2.08e-4],  # units are m
+    'sigSR': [5.e-5, 5.e-5, 0.08],  # units are nm
+    'base': 1.e-10  # units nm^2m^2
+    },'M3' :  # big telescope tertiary mirror
    {'amp': [1., 1., 0.],
     'alpha': [-27.924, 3.615, 0.],
     'beta': [1.261e-10, 65.27 , 0.],  # units are nm*m
     'otS': [0.42, 0.12, np.inf],  # units are m
     'inS': [-1.31, 8.81e-5, 0.],  # units are m
-    'sigSR': [0.05, 0.37, 0.]  # units are nm
+    'sigSR': [0.05, 0.37, 0.],  # units are nm
+    'base': 2.3e-5  # units nm^2m^2
     }
 }
 
