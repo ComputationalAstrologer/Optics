@@ -56,7 +56,7 @@ if LOAD:
 
 
 #locations for random sample of stellar field
-nloc = 2
+nloc = 9
 loc = []; angls = []; dpix=[]; 
 for k in range(nloc):  # this code block uses PM.FindPerfectAngle to adjust the input angles
     r = (np.random.rand()*7.5 + 0.5)*2*np.pi

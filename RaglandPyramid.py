@@ -193,6 +193,9 @@ def RunStuff():
     #for k in range(n_mods):
     #    phk = FO.TipTiltPhasor(Nppix, mod_angles[k], mod_rad)
     #    mod_phasors[:,k] = PM.ExtractPupilVec(phk, ipmap)
+    SamMatrixFileName = './Pickles/SamSystemMatrix.pickle'
+    A = SamMatrix(SamMatrixFileName, create=False)
+    
 
     l = 135
     if False:
