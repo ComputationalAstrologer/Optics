@@ -65,13 +65,16 @@ Xmin - location (x coordinate) of leftmost spline knot
 Delta - distance (1D) between spline knots (same in both directions)
 Ny - number of splne knots in y-direction. if None -> Ny = Nx
 Ymin - location (y coordinate) of bottom spline knot. if None -> Ymin = Xmin
+ZeroMean - spline functions are zero-mean, except at the edges.
+           This adds another coefficient (the final one!) representing the mean of the function
 reg - regularization parameter (Tikhonov).  if None -> truncated SVD is applied
-
+KnotsOnly - Don't calculate the matrices, just set things up.
 """
 
 ### begin  class definition
 class BivariateCubicSpline():  # 
-    def __init__(self, x, y, Nx, Xmin, Delta, Ny=None, Ymin=None, reg=None):
+    def __init__(self, x, y, Nx, Xmin, Delta, Ny=None, Ymin=None, 
+                 ZeroMean=False, reg=None, KnotsOnly=False):
         assert np.array(x).ndim == np.array(y).ndim ==  1
         assert len(x) == len(y)
         self.Delta = Delta
@@ -80,8 +83,10 @@ class BivariateCubicSpline():  #
         if Ymin == None: Ymin = Xmin
         self.Xmin = Xmin; self.Ymin = Ymin; self.Nx=Nx; self.Ny=Ny
         self.Nsp = Nx*Ny  # total number of splines
-        #xkn = Xmin + np.arange(Nx)*Delta  # x knot locations
-        #ykn = Ymin + np.arange(Ny)*Delta  # y knot locations
+        if ZeroMean:
+            self.Nsp += 1
+            print("Using the ZeroMean kwarg is a bad idea.  It makes the matrix singular.")
+            assert(False)
         self.twoTOone = dict()  # dictionary from 2D index to 1D index of spline knots
         self.oneTOtwo = dict()  # dictionary from 1D index to 2D index of spline knots
         self.splcen   = dict()  # dictionary of spline centers (note the two key types, as per below)
@@ -93,6 +98,9 @@ class BivariateCubicSpline():  #
                 self.twoTOone[(kx, ky)] = k
                 self.splcen[k] = (Xmin + kx*Delta, Ymin + ky*Delta)
                 self.splcen[(kx, ky)] = (Xmin + kx*Delta, Ymin + ky*Delta)
+        if KnotsOnly:  # don't calculate the matrices
+            self.mat = None; self.imat = None; self.eigvals = None
+            return(None)
 
         mat = np.zeros((len(x), self.Nsp)).astype('float32')  # the spline coefficients come from inverting this matrix
         for k in range(len(x)):
@@ -108,6 +116,13 @@ class BivariateCubicSpline():  #
                             mat[k, kn] = Bspline3_2D(dx, dy, Delta)
                         else:  pass  # condition on kx
                 else: pass  # condition on ky
+        if ZeroMean:
+            kn = self.twoTOone[(self.Nx//2, self.Ny//2)]
+            meanSpVal = np.sum(mat[:,kn])/np.count_nonzero(mat[:,kn])
+            mat -= meanSpVal
+            mat[:, -1] = np.ones((len(x),))/len(x)  # final column corresponds to the mean
+        self.mat = mat
+
 
         #w is a vector of eigenvalues, the columns of V are the corresponding eigenvectors
         #V.dot(np.diag(w)).dot(V.T) = mat.T.dot(mat)
@@ -122,7 +137,7 @@ class BivariateCubicSpline():  #
         else:
             print("The condition matrix has ", nz, " zero eigenvalues.  The eigenvalues are stored in .eigvals")
 
-        print("The pseudo-inverse is stored in .imat")
+        print("The forward matrix is stored in .mat and its pseudo-inverse is stored in .imat")
         if reg is None:
             print("You have chosen not to apply regularization.")
             if nz == 0:
@@ -136,33 +151,44 @@ class BivariateCubicSpline():  #
 
     #This gets the spline coefficients for a given set of observations
     # z is flattened array of observations
+    #Works for complex z
     def GetSplCoefs(self, z): 
         assert np.array(z).ndim == 1
         assert len(z) == len(self.x)
         return(self.imat.dot(z))
 
     #Given a set of spline coefs (see GetSplCoefs() ), this provides the interpolation.
-    #xi - a flattened array (or list) of x coordinates
-    #yi - a flattened array (or list) of y coordinates
-    #coefs - a vector of spline coefficients (See .GetSplCoefs)
-    def SplInterp(self, xi, yi, coefs):
-        assert np.array(xi).ndim == np.array(yi).ndim == 1
-        assert len(xi) == len(yi)
-        out = np.zeros((len(xi), ))  # output values
-        for k in range(len(xi)):
-            mx = np.floor( (xi[k] - self.Xmin)/self.Delta ).astype('int')  # xi[k] is between mx and mx+1
-            my = np.floor( (yi[k] - self.Ymin)/self.Delta ).astype('int')  # yi[k] is between my and my+1
-            for ky in range(my-1, my+3):
-                if (ky > -1) and (ky < self.Ny):
-                    for kx in range(mx-1, mx+3):
-                        if (kx > -1 ) and (kx < self.Nx):
-                            kn = self.twoTOone[(kx,ky)]  # 1D knot index
-                            dx = xi[k] - self.splcen[(kx,ky)][0]
-                            dy = yi[k] - self.splcen[(kx,ky)][1]
-                            out[k] += coefs[kn]*Bspline3_2D(dx, dy, self.Delta)
-                        else:  pass  # condition on kx
-                else: pass  # condition on ky
-        return(out)
+    #coefs - a vector of spline coefficients - can be complex (See .GetSplCoefs)
+    #xi - if None: self.x and self.y will be used for the spatial grid
+    #     if not None: a flattened array (or list) of x coordinates (see np. meshgrid)
+    #yi - a flattened array (or list) of y coordinates (if not None)
+    #Works for complex valued coefs vector
+    def SplInterp(self, coefs, xi=None, yi=None):
+        if xi is None:
+            assert(yi is None)
+            return self.mat.dot(coefs)
+        else:
+            assert(yi is not None)
+            assert np.array(xi).ndim == np.array(yi).ndim == 1
+            assert len(xi) == len(yi)
+            if np.iscomplexobj(coefs):
+                out = np.zeros((len(xi), )).astype('complex')  # output values
+            else:
+                out = np.zeros((len(xi), ))  # output values
+            for k in range(len(xi)):
+                mx = np.floor( (xi[k] - self.Xmin)/self.Delta ).astype('int')  # xi[k] is between mx and mx+1
+                my = np.floor( (yi[k] - self.Ymin)/self.Delta ).astype('int')  # yi[k] is between my and my+1
+                for ky in range(my-1, my+3):
+                    if (ky > -1) and (ky < self.Ny):
+                        for kx in range(mx-1, mx+3):
+                            if (kx > -1 ) and (kx < self.Nx):
+                                kn = self.twoTOone[(kx,ky)]  # 1D knot index
+                                dx = xi[k] - self.splcen[(kx,ky)][0]
+                                dy = yi[k] - self.splcen[(kx,ky)][1]
+                                out[k] += coefs[kn]*Bspline3_2D(dx, dy, self.Delta)
+                            else:  pass  # condition on kx
+                    else: pass  # condition on ky
+            return(out)
 ### end class definition
 
 
