@@ -168,6 +168,9 @@ class BivariateCubicSpline():  #
     #yi - a flattened array (or list) of y coordinates (if not None)
     #Works for complex valued coefs vector
     def SplInterp(self, coefs, xi=None, yi=None):
+        if len(coefs) != self.Nsp:
+            print("usage: .SplInterp(coefs, xi=[None], yi=[None])");
+            assert(False)
         if xi is None:
             assert(yi is None)
             return self.mat.dot(coefs)
