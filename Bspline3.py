@@ -65,6 +65,7 @@ Xmin - location (x coordinate) of leftmost spline knot
 Delta - distance (1D) between spline knots (same in both directions)
 Ny - number of splne knots in y-direction. if None -> Ny = Nx
 Ymin - location (y coordinate) of bottom spline knot. if None -> Ymin = Xmin
+Normalize - if True, basis functions sum to unity
 ZeroMean - spline functions are zero-mean, except at the edges.
            This adds another coefficient (the final one!) representing the mean of the function
 reg - regularization parameter (Tikhonov).  if None -> truncated SVD is applied
@@ -73,8 +74,8 @@ KnotsOnly - Don't calculate the matrices, just set things up.
 
 ### begin  class definition
 class BivariateCubicSpline():  # 
-    def __init__(self, x, y, Nx, Xmin, Delta, Ny=None, Ymin=None, 
-                 ZeroMean=False, reg=None, KnotsOnly=False):
+    def __init__(self, x, y, Nx, Xmin, Delta, Ny=None, Ymin=None, reg=None,
+                 Normalize=False, ZeroMean=False, KnotsOnly=False):
         assert np.array(x).ndim == np.array(y).ndim ==  1
         assert len(x) == len(y)
         self.Delta = Delta
@@ -116,6 +117,9 @@ class BivariateCubicSpline():  #
                             mat[k, kn] = Bspline3_2D(dx, dy, Delta)
                         else:  pass  # condition on kx
                 else: pass  # condition on ky
+        if Normalize:
+            kn = self.twoTOone[(self.Nx//2, self.Ny//2)]
+            mat /= np.sum(mat[:,kn])
         if ZeroMean:
             kn = self.twoTOone[(self.Nx//2, self.Ny//2)]
             meanSpVal = np.sum(mat[:,kn])/np.count_nonzero(mat[:,kn])
