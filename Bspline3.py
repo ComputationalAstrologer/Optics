@@ -30,9 +30,9 @@ def Bspline3_1D(x, delta):
     if q >= 2.:
         return(0.)
     if q >= 1.:
-        return( ((2.-q)**3)/(delta*6.) )
+        return( ((2.-q)**3)/6. )
     else:
-        return( (2./3 - q*q + q*q*q/2.)/delta )
+        return( (2./3 - q*q + q*q*q/2.))
     
 #See Bspline3_1D
 def Bspline3_2D(x, y, delta):
