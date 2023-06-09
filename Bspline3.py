@@ -198,6 +198,107 @@ class BivariateCubicSpline():  #
             return(out)
 ### end class definition
 
+class UnivariateCubicSpline():  # 
+    def __init__(self, x, Nx, Xmin, Delta, reg=None,
+                 Normalize=False, ZeroMean=False, KnotsOnly=False):
+        assert False
+        assert np.array(x).ndim ==  1
+        self.Delta = Delta
+        self.x = x; 
+        self.Xmin = Xmin; self.Nx=Nx;
+        if ZeroMean:
+            self.Nsp += 1
+            print("Using the ZeroMean kwarg is a bad idea.  It makes the matrix singular.")
+            assert(False)
+        self.splcen   = dict()  # dictionary of spline centers (note the two key types, as per below)
+        k = -1
+        for kx in range(Nx):
+                k += 1
+                self.splcen[k] = Xmin + kx*Delta
+        if KnotsOnly:  # don't calculate the matrices
+            self.mat = None; self.imat = None; self.eigvals = None
+            return(None)
+
+        mat = np.zeros((len(x), self.Nsp)).astype('float32')  # the spline coefficients come from inverting this matrix
+        for k in range(len(x)):
+            mx = np.floor( (x[k] - Xmin)/Delta ).astype('int')  # x[k] is between mx and mx+1
+            for kx in range(mx-1, mx+3):
+                        if (kx > -1 ) and (kx < Nx):
+                            kn = kx  # 1D knot index
+                            dx = x[k] - self.splcen[kx]
+                            mat[k, kn] = Bspline3_1D(dx, Delta)
+                        else:  pass  # condition on kx
+        if Normalize:
+            kn = self.twoTOone[(self.Nx//2, self.Ny//2)]
+            mat /= np.sum(mat[:,kn])
+        if ZeroMean:
+            kn = self.twoTOone[(self.Nx//2, self.Ny//2)]
+            meanSpVal = np.sum(mat[:,kn])/np.count_nonzero(mat[:,kn])
+            mat -= meanSpVal
+            mat[:, -1] = np.ones((len(x),))/len(x)  # final column corresponds to the mean
+        self.mat = mat
+
+
+        #w is a vector of eigenvalues, the columns of V are the corresponding eigenvectors
+        #V.dot(np.diag(w)).dot(V.T) = mat.T.dot(mat)
+        #V.dot(V.T) is the identity
+        #V.dot(np.inv(np.diag(w))).dot(V.T) = np.inv(mat.T.dot(mat))  if there are no zero eigenvalues
+        w, V = np.linalg.eigh(mat.T.dot(mat))
+        self.eigvals = w
+        nz = len(w) - np.count_nonzero(w)
+        if nz == 0:  #no zero eigenvalues
+            print("The regression matrix has no zero eigenvalues, and the condition number is ",
+                  np.max(w)/np.min(w), "  The eigenvalues are stored in .eigvals" )
+        else:
+            print("The condition matrix has ", nz, " zero eigenvalues.  The eigenvalues are stored in .eigvals")
+
+        print("The forward matrix is stored in .mat and its pseudo-inverse is stored in .imat")
+        if reg is None:
+            print("You have chosen not to apply regularization.")
+            if nz == 0:
+                self.imat = V.dot(np.diag(1/w)).dot(V.T).dot(mat.T)
+            else:
+                self.imat = np.linalg.pinv(mat)
+        else:
+            print("You have chosen to apply regularization with parameter ", reg)
+            self.imat = np.linalg.inv(mat.T.dot(mat) + reg*np.eye(self.Nsp)).dot(mat.T)
+        return(None)
+
+    #This gets the spline coefficients for a given set of observations
+    # z is flattened array of observations
+    #Works for complex z
+    def GetSplCoefs(self, z): 
+        assert np.array(z).ndim == 1
+        assert len(z) == len(self.x)
+        return(self.imat.dot(z))
+
+    #Given a set of spline coefs (see GetSplCoefs() ), this provides the interpolation.
+    #coefs - a vector of spline coefficients - can be complex (See .GetSplCoefs)
+    #xi - if None: self.x and self.y will be used for the spatial grid
+    #     if not None: a flattened array (or list) of x coordinates (see np. meshgrid)
+    #yi - a flattened array (or list) of y coordinates (if not None)
+    #Works for complex valued coefs vector
+    def SplInterp(self, coefs, xi=None):
+        if len(coefs) != self.Nsp:
+            print("usage: .SplInterp(coefs, xi=[None], yi=[None])");
+            assert(False)
+        if xi is None:
+            return self.mat.dot(coefs)
+        else:
+            if np.iscomplexobj(coefs):
+                out = np.zeros((len(xi), )).astype('complex')  # output values
+            else:
+                out = np.zeros((len(xi), ))  # output values
+            for k in range(len(xi)):
+                mx = np.floor( (xi[k] - self.Xmin)/self.Delta ).astype('int')  # xi[k] is between mx and mx+1
+                for kx in range(mx-1, mx+3):
+                            if (kx > -1 ) and (kx < self.Nx):
+                                kn = kx
+                                dx = xi[k] - self.splcen[kx]
+                                out[k] += coefs[kn]*Bspline3_1D(dx, self.Delta)
+                            else:  pass  # condition on kx
+            return(out)
+### end class definition
 
 
 #This illustrates how to use these spline tools
