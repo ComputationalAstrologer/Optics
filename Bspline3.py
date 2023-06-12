@@ -74,13 +74,17 @@ KnotsOnly - Don't calculate the matrices, just set things up.
 
 ### begin  class definition
 class BivariateCubicSpline():  # 
-    def __init__(self, x, y, Nx, Xmin, Delta, Ny=None, Ymin=None, reg=None,
+    def __init__(self, x, y, Nx, Xmin=None, Delta=None, Ny=None, Ymin=None, reg=None,
                  Normalize=False, ZeroMean=False, KnotsOnly=False):
         assert np.array(x).ndim == np.array(y).ndim ==  1
         assert len(x) == len(y)
+        if Delta is None:  
+            Delta = (x.max() - x.min())/Nx
         self.Delta = Delta
         self.x = x; self.y = y
         if Ny == None: Ny = Nx
+        if Xmin is None:
+            Xmin = x.min() + Delta/2.
         if Ymin == None: Ymin = Xmin
         self.Xmin = Xmin; self.Ymin = Ymin; self.Nx=Nx; self.Ny=Ny
         self.Nsp = Nx*Ny  # total number of splines
@@ -199,13 +203,18 @@ class BivariateCubicSpline():  #
 ### end class definition
 
 class UnivariateCubicSpline():  # 
-    def __init__(self, x, Nx, Xmin, Delta, reg=None,
+    def __init__(self, x, Nx, Xmin=None, Delta=None, reg=None,
                  Normalize=False, ZeroMean=False, KnotsOnly=False):
-        assert False
         assert np.array(x).ndim ==  1
+        if Delta is None:
+            Delta = (x.max() - x.min())/Nx
+        if Xmin is None:
+            Xmin = x.min() + Delta/2
         self.Delta = Delta
+        self.Nsp = Nx
         self.x = x; 
-        self.Xmin = Xmin; self.Nx=Nx;
+        self.Xmin = Xmin;
+        self.Nx=Nx;
         if ZeroMean:
             self.Nsp += 1
             print("Using the ZeroMean kwarg is a bad idea.  It makes the matrix singular.")
