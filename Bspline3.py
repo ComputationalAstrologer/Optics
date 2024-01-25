@@ -60,6 +60,7 @@ This assumes the same spacing of the spline knots in both directions on a rectan
 z - 1D vector of function values to be fit (not needed for __init__() )
 x - 1D vector of x coords corresponding to z.  must have len(x) == len(z)
 y - 1D vector of y coords corresponding to z.  must have len(y) == len(x)
+    -- x and y are likely the output of the np.meshgrid routine
 Nx - number of spline knots in x-direction
 Xmin - location (x coordinate) of leftmost spline knot
 Delta - distance (1D) between spline knots (same in both directions)
@@ -143,7 +144,7 @@ class BivariateCubicSpline():  #
             print("The regression matrix has no zero eigenvalues, and the condition number is ",
                   np.max(w)/np.min(w), "  The eigenvalues are stored in .eigvals" )
         else:
-            print("The condition matrix has ", nz, " zero eigenvalues.  The eigenvalues are stored in .eigvals")
+            print("The regression matrix has ", nz, " zero eigenvalues.  The eigenvalues are stored in .eigvals")
 
         print("The forward matrix is stored in .mat and its pseudo-inverse is stored in .imat")
         if reg is None:
