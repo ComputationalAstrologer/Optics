@@ -27,7 +27,7 @@ import Bspline3 as BS  # this module is in MySplineToolsLocation
 #  4 pixel values: [minX, maxX, minY, maxY] 
 
 class EFC():
-    def __init__(self, HoleBndy=[270, 370, 206, 306]):
+    def __init__(self, HoleBndy=[300, 420, 300, 420]):
         if HoleBndy is not None:
             assert len(HoleBndy) == 4
             self.HoleShape = (HoleBndy[3]-HoleBndy[2]+1, HoleBndy[1]-HoleBndy[0]+1)
@@ -35,6 +35,7 @@ class EFC():
         else: self.HoleShape = (0,0)
         self.lamb = 1.  # wavelength in microns
         self.ndm = 21  # number of actuators (1D)
+        self.SpeckleFactor = 1.e4  # see self.PolIntensity.  This can be changed in its function call
         SysX = np.load(PropMatLoc + 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy' )  # system matrices
         SysY = np.load(PropMatLoc + 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy' )
         SpecX = np.load(PropMatLoc + 'SpeckleFieldFrom24x24screen_Ex.npy')  # X polarized speckles
@@ -72,11 +73,11 @@ class EFC():
     #DMheight - if True the coefficient vector is interpreted as a DM height in microns and must be real-valued
     #          - if False it is simply a coefficient and can be complex valued
     #return_grad - return the gradient.  For now, only works when DMheight is True
-    #InclSpeckles - Include additive speckle field
-    #SpeckleFactor - multiplier for speckle field
+    #SpeckleFactor - multiplier for additive speckle field.  Can be 0.  None corresponds to defaul (see __init__)
     def PolIntensity(self, coef, XorY='X', DMheight=True, return_grad=True,
-                     InclSpeckles=True, SpeckleFactor=1.0):
+                     SpeckleFactor=None):
         nc = self.ndm**2
+        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
         assert coef.shape == (nc,)
         assert XorY == 'X' or XorY == 'Y'
         if XorY == 'X': 
@@ -97,7 +98,7 @@ class EFC():
                 assert False
 
         f = Sys.dot(c)
-        if InclSpeckles: f += SpeckleFactor*sp.reshape(f.shape)
+        f += SpeckleFactor*sp.reshape(f.shape)
         I = np.real(f*np.conj(f))
         if not return_grad:
             return I
@@ -111,29 +112,30 @@ class EFC():
         assert np.iscomplexobj(c) is False
         assert c.shape == (self.SysX.shape[1],)
         if return_grad:
-            I, dI = self.PolIntensity(c,XorY='X',DMheight=True,return_grad=True, InclSpeckles=True,SpeckleFactor=1.)
+            I, dI = self.PolIntensity(c,XorY='X',DMheight=True,return_grad=True)
             cost = np.sum(I)
             dcost = np.sum(dI, axis=0)
             return (cost, dcost)
         else:
-            I     = self.PolIntensity(c,XorY='X',DMheight=True,return_grad=False,InclSpeckles=True,Specklefactor=1.)
+            I     = self.PolIntensity(c,XorY='X',DMheight=True,return_grad=False)
             cost = np.sum(I)
             return cost
     
     #This does the optimization over the dominant intensity to dig the dark hole
     #c0 - initial guess
-    def DigHoleDominant(self, c0):
-        #Newton-CG set up.  leads to large command values
-        optionsNCG={'disp':True, 'maxiter':20}
-        out = optimize.minimize(self.CostHoleDominant,c0,args=(),method='Newton-CG',options=optionsNCG,jac=True)
-        #SLSQP set up
-        maxabs = np.pi/12
-        conmat = np.eye(len(c0))
-        ub =   maxabs*np.ones(c0.shape)
-        lb = - maxabs*np.ones(c0.shape)
-        constraints = optimize.LinearConstraint(conmat, lb=lb, ub=ub)
-        
-        
-        
+    #method - options are 'NCG' (Newton Conj Grad), 'SLSQP'
+    def DigHoleDominant(self, c0, method='SLSQP'):
+        if method == 'NCG':  #Newton-CG set up.  leads to large command values without a penalty
+           options={'disp':True, 'maxiter':20}
+           out = optimize.minimize(self.CostHoleDominant,c0,args=(),method='Newton-CG',options=options,jac=True)
+        elif method == 'SLSQP':   #SLSQP set up
+            options = {'disp': True, 'maxiter':10 }
+            maxabs = np.pi/12
+            conmat = np.eye(len(c0))
+            ub =   maxabs*np.ones(c0.shape)
+            lb = - maxabs*np.ones(c0.shape)
+            constr = optimize.LinearConstraint(conmat, lb=lb, ub=ub)
+            out = optimize.minimize(self.CostHoleDominant, c0, args=(),options=options,
+                                    method='SLSQP',jac=True,constraints=(constr,))
         return out
     
