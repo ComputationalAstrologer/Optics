@@ -24,18 +24,19 @@ import Bspline3 as BS  # this module is in MySplineToolsLocation
 
 #This assumes that the input light is linearly polarized in the X-direction
 #HoleBndy - Speficies the corners of the dark hole (inclusive).  It is a list or tuple with
-#  4 pixel values: [minX, maxX, minY, maxY] 
+#  4 pixel values: [minY, maxY, minX, maxX] (note the row,col order) 
 
 class EFC():
-    def __init__(self, HoleBndy=[300, 420, 300, 420]):
+    def __init__(self, HoleBndy=[227, 285, 314, 372], SpeckleFactor=10.):
         if HoleBndy is not None:
             assert len(HoleBndy) == 4
-            self.HoleShape = (HoleBndy[3]-HoleBndy[2]+1, HoleBndy[1]-HoleBndy[0]+1)
+            self.HoleShape = (HoleBndy[1]-HoleBndy[0]+1, HoleBndy[3]-HoleBndy[2]+1)
             assert self.HoleShape[0] > 0 and self.HoleShape[1] > 0 
         else: self.HoleShape = (0,0)
         self.lamb = 1.  # wavelength in microns
         self.ndm = 21  # number of actuators (1D)
-        self.SpeckleFactor = 1.e4  # see self.PolIntensity.  This can be changed in its function call
+        self.lamdpix = (512/20)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
+        self.SpeckleFactor = SpeckleFactor  # see self.PolIntensity.  This can be changed in its function call
         SysX = np.load(PropMatLoc + 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy' )  # system matrices
         SysY = np.load(PropMatLoc + 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy' )
         SpecX = np.load(PropMatLoc + 'SpeckleFieldFrom24x24screen_Ex.npy')  # X polarized speckles
@@ -48,8 +49,8 @@ class EFC():
             sz = int(np.sqrt(SysX.shape[0]))
             self.lindex = []  # 1D pixel index of dark hole pixel
             self.duodex = []  # 2D pixel index of dark hole pixels
-            self.SpecX = SpecX[HoleBndy[0]:HoleBndy[1] + 1, HoleBndy[2]:HoleBndy[3] +1]
-            self.SpecY = SpecY[HoleBndy[0]:HoleBndy[1] + 1, HoleBndy[2]:HoleBndy[3] +1]
+            self.SpecX = SpecX[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]
+            self.SpecY = SpecY[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]
             for row in np.arange(HoleBndy[0], HoleBndy[1] + 1):
                 for col in np.arange(HoleBndy[2], HoleBndy[3] +1):
                    self.duodex.append( (row,col) )
@@ -121,12 +122,35 @@ class EFC():
             cost = np.sum(I)
             return cost
     
+    #This calculates something like signal-to-noise ratio for the cross polarization
+    #metric - the various options correspond to:
+    #  'A' - Iy/(const + Ix)
+    def CostCrossSNR(self,c, metric='A'):  # passed gradient test 2/5/24
+        const = 1.e-9
+        Ix, gIx = self.PolIntensity(c,'X')
+        Iy, gIy = self.PolIntensity(c,'Y',SpeckleFactor=0.)
+        if metric == 'A':
+            s = np.sum(Iy/(const + Ix))
+            gs = gIy.T/(const + Ix) - gIx.T*Iy/( (const + Ix)**2 )
+            gs = np.sum(gs,axis=1)
+        else: assert False
+        return (-1*s, -1*gs)  #make it loss function instead of a profit function
+    
+    #This uses the Newton Conjugate Grad method to find minima of a function
+    #   from a number of random starting points.
+    #c - a dark hole starting point
+    def FindMaxima(self,c,npts=12,maxiter=30):
+        fun = self.CostCrossSNR
+        options={'disp':True, 'maxiter':30}
+        out = optimize.minimize(fun,c,args=(),method='Newton-CG',options=options,jac=True)
+        return out
+    
     #This does the optimization over the dominant intensity to dig the dark hole
     #c0 - initial guess
     #method - options are 'NCG' (Newton Conj Grad), 'SLSQP'
-    def DigHoleDominant(self, c0, method='SLSQP'):
+    def DigHoleDominant(self, c0, method='NCG',maxiter=20):
         if method == 'NCG':  #Newton-CG set up.  leads to large command values without a penalty
-           options={'disp':True, 'maxiter':20}
+           options={'disp':True, 'maxiter':maxiter}
            out = optimize.minimize(self.CostHoleDominant,c0,args=(),method='Newton-CG',options=options,jac=True)
         elif method == 'SLSQP':   #SLSQP set up
             options = {'disp': True, 'maxiter':10 }
