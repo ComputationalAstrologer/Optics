@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Feb 13 18:08:39 2024
+Created oNcnt Tue Feb 13 18:08:39 2024
 @author: rfrazin
 
 This explores the statistical properties of nonlinear probing for EFC
@@ -18,15 +18,15 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 
 #This calculates the -1*(log likelihood) under a poisson distribution
-#   Note that the N! term is not included
-#N - a list (or array) of count values (measurements)
+#   Ncntote that the Ncnt! term is not included
+#Ncnt - a list (or array) of count values (measurements)
 #I - a list (or array) of intensity values (units are counts, but need not be integer valued.  I is the response variable
-#    note len(I) must equal len(N)
+#    note len(I) must equal len(Ncnt)
 #Ig  - optional list (not array!) of intensity gradients. If provided the gradient will be output
 #Igg - optional list (not array!) of intensity hessians.  If provided, the hessian will be output.
 #      requires gradient to be provided.
-def NegLLPoisson(N, I, Ig=None, Igg=None):
-    M = len(N)  # M is the number of "measurements"
+def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
+    M = len(Ncnt)  # M is the number of "measurements"
     if len(I) != M:
         print("Input counts (M) and the number of intensity values do not match.")
         assert False
@@ -39,14 +39,14 @@ def NegLLPoisson(N, I, Ig=None, Igg=None):
     negllg = 0.
     negllgg = 0.
     for m in range(M): #fist calculate LL, LLg, LLgg and then multiply by -1 when done
-        s = N[m]*np.log(I[m]) - I[m]
+        s = Ncnt[m]*np.log(I[m]) - I[m]
         negll -= s
         if Ig is not None:
-            dlnPds = N[m]/I[m] - 1.
+            dlnPds = Ncnt[m]/I[m] - 1.
             sg = dlnPds*Ig[m]
             negllg -= sg
             if Igg is not None:        
-                d2lnPds2 = -1.*N[m]/(I[m]**2)
+                d2lnPds2 = -1.*Ncnt[m]/(I[m]**2)
                 sgg = d2lnPds2*np.outer(Ig[m],Ig[m]) + dlnPds*Igg[m] 
                 negllgg -= sgg
     if Igg is not None:
@@ -57,11 +57,11 @@ def NegLLPoisson(N, I, Ig=None, Igg=None):
 
 #This produces the intensity in units of photons at a single pixel
 # x is the state vector
-#   x[0] - log(incoherent intensity)
+#   x[0] - log(incoherent intensity) - don't forget the log!
 #   x[1] - speckle field (real part)
 #   x[2] - speckle field (imag part)
 # probes - a list, tuple, or array of complex numbers corresponding to probe fields
-def intensity(x, probes, return_grad=False, return_hess=False):
+def Intensity(x, probes, return_grad=False, return_hess=False):
     out = []
     if return_grad: out_grad = []
     if return_hess:  # it's a constant diag!
@@ -92,24 +92,65 @@ def intensity(x, probes, return_grad=False, return_hess=False):
         return (out, out_grad, out_hess)
 
 
-def MonteCarloRun(Ntrials=1):
+
+def MonteCarloRun(Ntrials=500):
     sc = 1. # scale factor for all intensities
     z  = sc*20 # incoherent intensity
     f  = np.sqrt(sc*30)*np.exp(1j*np.pi/6)
     p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/8)
     p2 = p1*np.exp(-1j*np.pi/2)
     probes = [0., p1, p2]
+    x_true = np.array([np.log(z), np.real(f), np.imag(f)])
+    Itrue = Intensity(x_true,probes,False,False)
     
-    Itrue = intensity([z, np.real(f), np.imag(f)],probes,False,False)
-    Imeas = np.zeros((Ntrials,len(probes)))
-    for k in range(Ntrials):
-        for p in range(len(probes))
-            Imeas[k,p] = np.random.poisson(Itrue[p],1)[0]
-        
-    
-    return(None)
-    
+    #This is funciton given to the minimizer
+    def WrapperNegllPoisson(x, Ncnt):
+        I, Ig = Intensity(x, [0.,p1,p2],True,False)
+        nll, nllg = NegLLPoisson(Ncnt, I, Ig, None)
+        return (nll, nllg)
+    def WrapperNegllPoissonHess(x, Ncnt):
+        I, Ig, Igg = Intensity(x, [0.,p1,p2],True,True)
+        nll, nllg, nllgg = NegLLPoisson(Ncnt, I, Ig, Igg)
+        return nllgg
 
+    #This does performs local optimization with a series of starting points for |f| and its phase
+    #Imeas is one series of probe measurements.
+    # assumes 0th probe is 0, which provides un upper limit on |f|
+    def GridSearchOptimize(Imeas):  
+        fun = WrapperNegllPoisson
+        funH = WrapperNegllPoissonHess
+        magmax = np.sqrt(Imeas[0] + 2*np.sqrt(Imeas[0]))
+        mag = magmax*np.logspace(-4,0,5,base=2)
+        phase  = np.linspace(0, 2*np.pi*(9-1)/9, 9)
+        funval = np.zeros((len(mag),len(phase)))
+        xvals = np.zeros((len(mag), len(phase), 3))
+        ops = {'disp':False, 'maxiter': 50}
+        for km in range(len(mag)):
+            for kp in range(len(phase)):
+                mg = mag[km]
+                ph = phase[kp]
+                x = np.zeros((3,))
+                Iinc = Imeas[0] - mg**2
+                if Iinc <= 0.1: Iinc = 0.1
+                x[0] = np.log(Iinc)
+                #    x[0] = 0.
+                f = mg*np.exp(1j*ph)
+                x[1] = np.real(f)
+                x[2] = np.imag(f)
+                result = minimize(fun,x,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
+                funval[km,kp] = result['fun']
+                xvals[km,kp,:] = result['x']
+        best = np.unravel_index(np.argmin(funval),funval.shape)
+        return(xvals[best[0],best[1],:])
+            
+    Imeas = np.zeros((Ntrials,len(probes)))
+    xhat = np.zeros((Ntrials, 3))
+    for k in range(Ntrials):
+        for p in range(len(probes)):
+            Imeas[k,p] = np.random.poisson(Itrue[p],1)[0]
+        xhat[k,:] = GridSearchOptimize(Imeas[k,:])
+    Ihat = Intensity(xhat, [0.,p1,p2],False,False)
+    return (xhat, x_true, Itrue, Ihat)
     
         
         
