@@ -137,7 +137,7 @@ def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
         q = np.linalg.pinv(mat).dot(np.array([I1,I2]))
         xhat[1] = q[0]; xhat[2] = q[1]
         if IncModel == 'sqrt':
-            xhat[0] = np.sqrt(np.abs( I0 - 2*(xhat[1]**2 + xhat[2]**2) ))
+            xhat[0] = np.sqrt(np.abs( I0/2 - (xhat[1]**2 + xhat[2]**2) ))
         elif IncModel == 'log':
             xhat[0] = np.log(np.abs( I0 - 2*(xhat[1]**2 + xhat[2]**2) ))
         return(xhat)
