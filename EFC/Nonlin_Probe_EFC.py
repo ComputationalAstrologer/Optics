@@ -57,26 +57,37 @@ def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
 
 #This produces the intensity in units of photons at a single pixel
 # x is the state vector
-#   x[0] - log(incoherent intensity) - don't forget the log!
+#   x[0] - quantity that specifies incoherent intensit -- see kwarg "IncModel"
 #   x[1] - speckle field (real part)
 #   x[2] - speckle field (imag part)
 # probes - a list, tuple, or array of complex numbers corresponding to probe fields
-def Intensity(x, probes, return_grad=False, return_hess=False):
+# IncModel - if 'log' -  the input parameter is the log  of the incoherent intensity (removes positivity requirement)
+#          - if 'sqrt' - the input parameter is the sqrt of the incoherent intensity.  There is no positivity requirement
+def Intensity(x, probes, return_grad=False, return_hess=False, IncModel='sqrt'):
+    assert IncModel == "sqrt" or IncModel == "log"
     out = []
     if return_grad: out_grad = []
     if return_hess:  # it's a constant diag!
         out_hess = []
         s_gg = 2.*np.eye(3)
-        s_gg[0,0] = np.exp(x[0]); 
+        if IncModel == 'sqrt': pass
+        elif IncModel == 'log': s_gg[0,0] = np.exp(x[0]); 
 
     sp = x[1] + 1j*x[2]  # speckle field
     for l in range(len(probes)):
         tc = probes[l] + sp   # total coherent field
-        s = np.exp(x[0]) + np.real(tc*np.conj(tc))
+        if IncModel == 'log':
+            iinc = np.exp(x[0])
+            iinc_g = np.exp(x[0])
+        elif IncModel == 'sqrt':
+            iinc = x[0]**2
+            iinc_g = 2*x[0]
+        
+        s = iinc + np.real(tc*np.conj(tc))
         out.append(s)
         if return_grad:
             s_g = np.zeros((3,))
-            s_g[0] = np.exp(x[0])
+            s_g[0] = iinc_g
             s_g[1] = 2*x[1] + 2*np.real(probes[l])
             s_g[2] = 2*x[2] + 2*np.imag(probes[l])
             out_grad.append(s_g)
@@ -93,16 +104,41 @@ def Intensity(x, probes, return_grad=False, return_hess=False):
 
 
 
-def MonteCarloRun(Ntrials=500):
+#IncMocel - see comments for the same kwarg in the Intensity function
+def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
+    assert IncModel == 'sqrt' or IncModel == 'log'
+    assert Estimator == 'NonLin' or Estimator == 'Pairwise'
     sc = 1. # scale factor for all intensities
-    z  = sc*20 # incoherent intensity
-    f  = np.sqrt(sc*30)*np.exp(1j*np.pi/6)
-    p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/8)
-    p2 = p1*np.exp(-1j*np.pi/2)
+    z  = sc*20 # incoherent intensity - note this an intensity not a field!
+    f  = np.sqrt(sc*30)*np.exp(1j*np.pi/6)   # field units 
+    p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/8)  # field units
+    p2 = p1*np.exp(-1j*np.pi/2)  # field units
     probes = [0., p1, p2]
-    x_true = np.array([np.log(z), np.real(f), np.imag(f)])
+    if Estimator == 'Pairwise':
+        sr2 = np.sqrt(2)
+        z /= 2.; f /= sr2; p1 /= sr2; p2 /= sr2
+        probes = [0, 0, p1, -p1, p2, s-p2]
+        
+    if IncModel == 'log':
+       x_true = np.array([np.log(z) , np.real(f), np.imag(f)])
+    elif IncModel == 'sqrt':
+       x_true = np.array([np.sqrt(z), np.real(f), np.imag(f)])
     Itrue = Intensity(x_true,probes,False,False)
-    
+   
+    def PairwiseEstimator(Imeas):
+        assert len(Imeas) == 6
+        xhat = np.zeros((3,))
+        I0 =  Imeas[0] + Imeas[1]
+        I1 = (Imeas[2] - Imeas[3])/4
+        I2 = (Imeas[4] - Imeas[5])/4
+        mat = np.zeros((2,2))
+        mat[0,0] = np.real(probes[2]); mat[0,1] = np.imag(probes[2])
+        mat[1,0] = np.real(probes[4]); mat[1,1] = np.imag(probes[4])
+        q = np.linalg.pinv(mat).dot(np.array([I1,I2]))
+        xhat[1] = q[0]; xhat[2] = q[1]
+        xhat[0] = I0 - 2*(xhat[1]**2 - xhat[2]**2)
+        return(xhat)
+        
     #This is funciton given to the minimizer
     def WrapperNegllPoisson(x, Ncnt):
         I, Ig = Intensity(x, [0.,p1,p2],True,False)
@@ -113,7 +149,7 @@ def MonteCarloRun(Ntrials=500):
         nll, nllg, nllgg = NegLLPoisson(Ncnt, I, Ig, Igg)
         return nllgg
 
-    #This does performs local optimization with a series of starting points for |f| and its phase
+    #This performs local optimization with a series of starting points for |f| and its phase
     #Imeas is one series of probe measurements.
     # assumes 0th probe is 0, which provides un upper limit on |f|
     def GridSearchOptimize(Imeas):  
@@ -140,17 +176,23 @@ def MonteCarloRun(Ntrials=500):
                 result = minimize(fun,x,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
                 funval[km,kp] = result['fun']
                 xvals[km,kp,:] = result['x']
-        best = np.unravel_index(np.argmin(funval),funval.shape)
-        return(xvals[best[0],best[1],:])
+        bestindex = np.unravel_index(np.argmin(funval),funval.shape)
+        return(xvals[bestindex[0],bestindex[1],:])
             
     Imeas = np.zeros((Ntrials,len(probes)))
     xhat = np.zeros((Ntrials, 3))
     for k in range(Ntrials):
         for p in range(len(probes)):
             Imeas[k,p] = np.random.poisson(Itrue[p],1)[0]
-        xhat[k,:] = GridSearchOptimize(Imeas[k,:])
-    Ihat = Intensity(xhat, [0.,p1,p2],False,False)
+        if Estimator == 'NonLin':
+            xhat[k,:] = GridSearchOptimize(Imeas[k,:])
+        elif Estimator == 'Pairwise':
+            assert False  # under construction
+        if IncModel == 'sqrt':  # ensure a positive estimate 
+            xhat[k,0] = np.abs(xhat[k,0])  
+    Ihat = Intensity(xhat, probes,False,False)
     return (xhat, x_true, Itrue, Ihat)
+    
     
         
         
