@@ -117,7 +117,7 @@ def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
     if Estimator == 'Pairwise':
         sr2 = np.sqrt(2)
         z /= 2.; f /= sr2; p1 /= sr2; p2 /= sr2
-        probes = [0, 0, p1, -p1, p2, s-p2]
+        probes = [0, 0, p1, -p1, p2, -p2]
         
     if IncModel == 'log':
        x_true = np.array([np.log(z) , np.real(f), np.imag(f)])
@@ -136,7 +136,10 @@ def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
         mat[1,0] = np.real(probes[4]); mat[1,1] = np.imag(probes[4])
         q = np.linalg.pinv(mat).dot(np.array([I1,I2]))
         xhat[1] = q[0]; xhat[2] = q[1]
-        xhat[0] = I0 - 2*(xhat[1]**2 - xhat[2]**2)
+        if IncModel == 'sqrt':
+            xhat[0] = np.sqrt(np.abs( I0 - 2*(xhat[1]**2 + xhat[2]**2) ))
+        elif IncModel == 'log':
+            xhat[0] = np.log(np.abs( I0 - 2*(xhat[1]**2 + xhat[2]**2) ))
         return(xhat)
         
     #This is funciton given to the minimizer
