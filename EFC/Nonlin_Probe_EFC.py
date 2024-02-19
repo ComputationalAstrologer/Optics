@@ -61,8 +61,10 @@ def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
 #   x[1] - speckle field (real part)
 #   x[2] - speckle field (imag part)
 # probes - a list, tuple, or array of complex numbers corresponding to probe fields
-# IncModel - if 'log' -  the input parameter is the log  of the incoherent intensity (removes positivity requirement)
+# IncModel - if 'log' (not recommended) -  the input parameter is the log  of the incoherent intensity (removes positivity requirement)
 #          - if 'sqrt' - the input parameter is the sqrt of the incoherent intensity.  There is no positivity requirement
+#Note when being used by MonteCarloRun, this function need to be fed x in the 'regression' space,
+#  not the 'physical' space.
 def Intensity(x, probes, return_grad=False, return_hess=False, IncModel='sqrt'):
     assert IncModel == "sqrt" or IncModel == "log"
     out = []
@@ -105,30 +107,63 @@ def Intensity(x, probes, return_grad=False, return_hess=False, IncModel='sqrt'):
 
 
 #IncMocel - see comments for the same kwarg in the Intensity function
-def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
+#Estimator - Nonlin is the nonlinear estimator without pairwise probing
+#          - Pairwise this uses pairwise probing for which a pair of probes has the same
+#             total exposure time as the single probes for the nonlinear estimator.  
+#             This is simulated by cutting the itensities of the probe measurements in half.
+#xtrue  - the values that a perfect estimator would find 
+#xModelTrue - the corresponding values of the regressands produce the
+#  correct outputs from the Intensity function.
+#
+def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
     assert IncModel == 'sqrt' or IncModel == 'log'
     assert Estimator == 'NonLin' or Estimator == 'Pairwise'
-    sc = 1. # scale factor for all intensities
-    z  = sc*20 # incoherent intensity - note this an intensity not a field!
+    sc = 50. # scale factor for all intensities
+    Iinc  = sc*20 # incoherent intensity - note this an intensity not a field!
     f  = np.sqrt(sc*30)*np.exp(1j*np.pi/6)   # field units 
     p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/8)  # field units
     p2 = p1*np.exp(-1j*np.pi/2)  # field units
-    probes = [0., p1, p2]
-    if Estimator == 'Pairwise':
-        sr2 = np.sqrt(2)
-        z /= 2.; f /= sr2; p1 /= sr2; p2 /= sr2
-        probes = [0, 0, p1, -p1, p2, -p2]
-        
-    if IncModel == 'log':
-       x_true = np.array([np.log(z) , np.real(f), np.imag(f)])
-    elif IncModel == 'sqrt':
-       x_true = np.array([np.sqrt(z), np.real(f), np.imag(f)])
-    Itrue = Intensity(x_true,probes,False,False)
-   
+    xtruephys = np.array([Iinc, np.real(f), np.imag(f)])  # the estimates we hope to obtain - this is in the 'physical' space not the  regressions space
+    probes = np.array([0., p1, p2])
+    if Estimator == 'Pairwise':  #this is needed to cut the exposure time in half
+        probes = np.array([0, 0, p1, -p1, p2, -p2])/np.sqrt(2)
+
+    def xPhys2xReg(xphys):  # goes from the physical space to regression space
+        xreg = 1.0*xphys  # deep copy
+        if IncModel == 'sqrt':
+              xreg[0] = np.sqrt(xphys[0])
+              if Estimator == 'Pairwise':
+                 xreg[0] = np.sqrt(xphys[0]/2)
+        if IncModel == 'log':
+             xreg[0] = np.log(xphys[0])
+             if Estimator == 'Pairwise':
+                 xreg[0] = np.log(xphys[0]/2)
+        if Estimator == 'Pairwise':
+            xreg[1] = xphys[1]/np.sqrt(2) 
+            xreg[2] = xphys[2]/np.sqrt(2)
+        return xreg  
+
+    def xReg2xPhys(xreg):  # this is the inverse of the function xPhys2xReg
+        xt = 1.0*xreg  # deep copy
+        if Estimator == 'Pairwise':
+            xt[1] = xreg[1]*np.sqrt(2)
+            xt[2] = xreg[2]*np.sqrt(2)
+            if IncModel == 'sqrt':
+                xt[0] = 2*xreg[0]**2
+            elif IncModel == 'log':
+                xt[0] = 2*np.exp(xreg[0])
+        if Estimator == 'Nonlin':
+           if IncModel == 'sqrt':
+                xt[0] = xreg[0]**2
+           elif IncModel == 'log':
+                xt[0] = np.exp(xreg[0])
+        return xt
+
+    #this returns x in the regression space
     def PairwiseEstimator(Imeas):
         assert len(Imeas) == 6
         xhat = np.zeros((3,))
-        I0 =  Imeas[0] + Imeas[1]
+        I0 = (Imeas[0] + Imeas[1])/2
         I1 = (Imeas[2] - Imeas[3])/4
         I2 = (Imeas[4] - Imeas[5])/4
         mat = np.zeros((2,2))
@@ -137,35 +172,36 @@ def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
         q = np.linalg.pinv(mat).dot(np.array([I1,I2]))
         xhat[1] = q[0]; xhat[2] = q[1]
         if IncModel == 'sqrt':
-            xhat[0] = np.sqrt(np.abs( I0/2 - (xhat[1]**2 + xhat[2]**2) ))
+            xhat[0] = np.sqrt(np.abs( I0 - (xhat[1]**2 + xhat[2]**2) ))
         elif IncModel == 'log':
-            xhat[0] = np.log(np.abs( I0 - 2*(xhat[1]**2 + xhat[2]**2) ))
-        return(xhat)
+            xhat[0] = np.log( np.abs( I0 - (xhat[1]**2 + xhat[2]**2) ))
+        return xhat
         
     #This is funciton given to the minimizer
     def WrapperNegllPoisson(x, Ncnt):
-        I, Ig = Intensity(x, [0.,p1,p2],True,False)
+        I, Ig = Intensity(x, probes, True, False)
         nll, nllg = NegLLPoisson(Ncnt, I, Ig, None)
         return (nll, nllg)
     def WrapperNegllPoissonHess(x, Ncnt):
-        I, Ig, Igg = Intensity(x, [0.,p1,p2],True,True)
+        I, Ig, Igg = Intensity(x, probes, True, True)
         nll, nllg, nllgg = NegLLPoisson(Ncnt, I, Ig, Igg)
         return nllgg
 
     #This performs local optimization with a series of starting points for |f| and its phase
     #Imeas is one series of probe measurements.
     # assumes 0th probe is 0, which provides un upper limit on |f|
+    # this returns x in the regression space
     def GridSearchOptimize(Imeas):  
         fun = WrapperNegllPoisson
         funH = WrapperNegllPoissonHess
         magmax = np.sqrt(Imeas[0] + 2*np.sqrt(Imeas[0]))
-        mag = magmax*np.logspace(-4,0,5,base=2)
+        mag = magmax*np.logspace(-4,0,6,base=2)
         phase  = np.linspace(0, 2*np.pi*(9-1)/9, 9)
         funval = np.zeros((len(mag),len(phase)))
         xvals = np.zeros((len(mag), len(phase), 3))
         ops = {'disp':False, 'maxiter': 50}
-        for km in range(len(mag)):
-            for kp in range(len(phase)):
+        for km in range(len(mag)):  # loop over |f|
+            for kp in range(len(phase)):  # loop over phase(f)
                 mg = mag[km]
                 ph = phase[kp]
                 x = np.zeros((3,))
@@ -181,20 +217,20 @@ def MonteCarloRun(Ntrials=500, IncModel='sqrt', Estimator='NonLin'):
                 xvals[km,kp,:] = result['x']
         bestindex = np.unravel_index(np.argmin(funval),funval.shape)
         return(xvals[bestindex[0],bestindex[1],:])
-            
+
+    #The Monte Carlo loop is done here
+    Itrue = Intensity(xPhys2xReg(xtruephys),probes,False,False,IncModel=IncModel)
     Imeas = np.zeros((Ntrials,len(probes)))
     xhat = np.zeros((Ntrials, 3))
     for k in range(Ntrials):
-        for p in range(len(probes)):
+        for p in range(len(probes)):  #calculate the intensity for each probe before using the esimator
             Imeas[k,p] = np.random.poisson(Itrue[p],1)[0]
         if Estimator == 'NonLin':
-            xhat[k,:] = GridSearchOptimize(Imeas[k,:])
+            xreg = GridSearchOptimize(Imeas[k,:])
         elif Estimator == 'Pairwise':
-            assert False  # under construction
-        if IncModel == 'sqrt':  # ensure a positive estimate 
-            xhat[k,0] = np.abs(xhat[k,0])  
-    Ihat = Intensity(xhat, probes,False,False)
-    return (xhat, x_true, Itrue, Ihat)
+            xreg = PairwiseEstimator(Imeas[k,:])
+        xhat[k,:] = xReg2xPhys(xreg)
+    return (xhat, xtruephys, Itrue)
     
     
         
