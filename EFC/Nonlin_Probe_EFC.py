@@ -4,7 +4,7 @@
 Created oNcnt Tue Feb 13 18:08:39 2024
 @author: rfrazin
 
-This explores the statistical properties of nonlinear probing for EFC
+This explores the statistical properties of Nonlinear probing for EFC
 The objective is to estimate the speckle field and incoherent intensity
   using known probe fields under the assumption of Poisson noise.
 All fields are in units of \sqrt(photons/exposure).  Intensities are in
@@ -107,29 +107,31 @@ def Intensity(x, probes, return_grad=False, return_hess=False, IncModel='sqrt'):
 
 
 #IncMocel - see comments for the same kwarg in the Intensity function
-#Estimator - Nonlin is the nonlinear estimator without pairwise probing
+#Estimator - Nonlin is the Nonlinear estimator without pairwise probing
 #          - Pairwise this uses pairwise probing for which a pair of probes has the same
-#             total exposure time as the single probes for the nonlinear estimator.  
+#             total exposure time as the single probes for the Nonlinear estimator.  
 #             This is simulated by cutting the itensities of the probe measurements in half.
 #xtrue  - the values that a perfect estimator would find 
 #xModelTrue - the corresponding values of the regressands produce the
 #  correct outputs from the Intensity function.
 #
-def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
+def MonteCarloRun(Ntrials=1000, IncModel='sqrt', Estimator='Nonlin'):
     assert IncModel == 'sqrt' or IncModel == 'log'
-    assert Estimator == 'NonLin' or Estimator == 'Pairwise'
-    sc = 50. # scale factor for all intensities
+    assert Estimator == 'Nonlin' or Estimator == 'Pairwise'
+    sc = 1. # scale factor for all intensities
     Iinc  = sc*20 # incoherent intensity - note this an intensity not a field!
-    f  = np.sqrt(sc*30)*np.exp(1j*np.pi/6)   # field units 
-    p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/8)  # field units
+    f  = np.sqrt(sc*40)*np.exp(1j*np.pi*5/11)   # field units 
+    p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/13)  # field units
     p2 = p1*np.exp(-1j*np.pi/2)  # field units
     xtruephys = np.array([Iinc, np.real(f), np.imag(f)])  # the estimates we hope to obtain - this is in the 'physical' space not the  regressions space
-    probes = np.array([0., p1, p2])
+    probes = np.array([0.,0., p1, -p1, p2, -p2])
     if Estimator == 'Pairwise':  #this is needed to cut the exposure time in half
         probes = np.array([0, 0, p1, -p1, p2, -p2])/np.sqrt(2)
 
-    def xPhys2xReg(xphys):  # goes from the physical space to regression space
-        xreg = 1.0*xphys  # deep copy
+    def xPhys2xReg(xphys, Esimtator='Nonlin', IncModel='sqrt'):  # goes from the physical space to regression space
+        assert Estimator == 'Nonlin' or Estimator == 'Pairwise'
+        assert IncModel == 'sqrt' or IncModel == 'log'
+        xreg = np.zeros(xphys.shape)  # deep copy
         if IncModel == 'sqrt':
               xreg[0] = np.sqrt(xphys[0])
               if Estimator == 'Pairwise':
@@ -141,10 +143,15 @@ def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
         if Estimator == 'Pairwise':
             xreg[1] = xphys[1]/np.sqrt(2) 
             xreg[2] = xphys[2]/np.sqrt(2)
+        elif Estimator == 'Nonlin':
+             xreg[1] = xphys[1]
+             xreg[2] = xphys[2]
         return xreg  
 
-    def xReg2xPhys(xreg):  # this is the inverse of the function xPhys2xReg
-        xt = 1.0*xreg  # deep copy
+    def xReg2xPhys(xreg, Estimator='Nonlin', IncModel='sqrt'):  # this is the inverse of the function xPhys2xReg
+        assert Estimator == 'Nonlin' or Estimator == 'Pairwise'
+        assert IncModel == 'sqrt' or IncModel == 'log'
+        xt = np.zeros(xreg.shape)  
         if Estimator == 'Pairwise':
             xt[1] = xreg[1]*np.sqrt(2)
             xt[2] = xreg[2]*np.sqrt(2)
@@ -152,7 +159,9 @@ def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
                 xt[0] = 2*xreg[0]**2
             elif IncModel == 'log':
                 xt[0] = 2*np.exp(xreg[0])
-        if Estimator == 'Nonlin':
+        elif Estimator == 'Nonlin':
+           xt[1] = xreg[1]
+           xt[2] = xreg[2]
            if IncModel == 'sqrt':
                 xt[0] = xreg[0]**2
            elif IncModel == 'log':
@@ -186,6 +195,14 @@ def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
         I, Ig, Igg = Intensity(x, probes, True, True)
         nll, nllg, nllgg = NegLLPoisson(Ncnt, I, Ig, Igg)
         return nllgg
+    
+    #This does a local optimization, starting at x0 (regresison space)
+    def OptimizeLocal(x0, Imeas):
+        fun = WrapperNegllPoisson
+        funH = WrapperNegllPoissonHess
+        ops = {'disp':False, 'maxiter': 500}
+        result = minimize(fun,x0,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
+        return result['x']
 
     #This performs local optimization with a series of starting points for |f| and its phase
     #Imeas is one series of probe measurements.
@@ -206,12 +223,15 @@ def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
                 ph = phase[kp]
                 x = np.zeros((3,))
                 Iinc = Imeas[0] - mg**2
-                if Iinc <= 0.1: Iinc = 0.1
-                x[0] = np.log(Iinc)
-                #    x[0] = 0.
+                if IncModel == 'sqrt':
+                    x[0] = np.sqrt(np.abs(Iinc))
+                elif IncModel == 'log':
+                    x[0] = np.log(np.abs(Iinc))
+                else: assert False
                 f = mg*np.exp(1j*ph)
                 x[1] = np.real(f)
                 x[2] = np.imag(f)
+                #if km == 0 and kp == 0: x = xPhys2xReg(xtruephys)  # see what happens if we put in the solution 
                 result = minimize(fun,x,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
                 funval[km,kp] = result['fun']
                 xvals[km,kp,:] = result['x']
@@ -225,11 +245,12 @@ def MonteCarloRun(Ntrials=100, IncModel='sqrt', Estimator='NonLin'):
     for k in range(Ntrials):
         for p in range(len(probes)):  #calculate the intensity for each probe before using the esimator
             Imeas[k,p] = np.random.poisson(Itrue[p],1)[0]
-        if Estimator == 'NonLin':
-            xreg = GridSearchOptimize(Imeas[k,:])
+        if Estimator == 'Nonlin':
+            xreg = GridSearchOptimize(Imeas[k,:])  # OptimizeLocal(xPhys2xReg(xtruephys),Imeas[k,:])
         elif Estimator == 'Pairwise':
             xreg = PairwiseEstimator(Imeas[k,:])
-        xhat[k,:] = xReg2xPhys(xreg)
+        xhat[k,:] = xReg2xPhys(xreg,Estimator=Estimator,IncModel=IncModel)
+        #print(xreg, xhat[k,:])
     return (xhat, xtruephys, Itrue)
     
     
