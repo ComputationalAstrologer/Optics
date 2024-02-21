@@ -11,6 +11,12 @@ All fields are in units of \sqrt(photons/exposure).  Intensities are in
   units of photons/exposure
 At this time, this estimates the log of the incoherent intensity 
 
+For equal total exposure time, nonlinear estimation without pairwise probes 
+   is not quite as goodd as pairwisee probing combined with linear estimation.
+   However, nonlinear probing with grid-search + Newton-CG (as implemented in
+   in MonteCarloRun) does work pretty well and should be viable when pairwise
+   probing is not possible, such as when estimating the cross polarization.
+
 """
 
 import numpy as np
@@ -124,7 +130,7 @@ def MonteCarloRun(Ntrials=1000, IncModel='sqrt', Estimator='Nonlin'):
     p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/13)  # field units
     p2 = p1*np.exp(-1j*np.pi/2)  # field units
     xtruephys = np.array([Iinc, np.real(f), np.imag(f)])  # the estimates we hope to obtain - this is in the 'physical' space not the  regressions space
-    probes = np.array([0.,0., p1, -p1, p2, -p2])
+    probes = np.array([0., p1, p2])
     if Estimator == 'Pairwise':  #this is needed to cut the exposure time in half
         probes = np.array([0, 0, p1, -p1, p2, -p2])/np.sqrt(2)
 
@@ -180,10 +186,24 @@ def MonteCarloRun(Ntrials=1000, IncModel='sqrt', Estimator='Nonlin'):
         mat[1,0] = np.real(probes[4]); mat[1,1] = np.imag(probes[4])
         q = np.linalg.pinv(mat).dot(np.array([I1,I2]))
         xhat[1] = q[0]; xhat[2] = q[1]
+        #optimal estimate of incoherent intensity- ignoring errors in the estimate of f
+        wt = np.zeros((len(probes),))
+        for k in range(len(probes)):  #inverse variance weighting
+            if Imeas[k] > 0.: 
+                wt[k] = 1./Imeas[k]
+            else:
+                wt[k] = 1.
+        wt /= np.sum(wt)
+        xhat[0] = 0.
+        f = xhat[1] + 1j*xhat[2]
+        for k in range(len(probes)):
+            xhat[0] += (Imeas[k] - np.abs(probes[k] + f)**2)*wt[k] 
         if IncModel == 'sqrt':
-            xhat[0] = np.sqrt(np.abs( I0 - (xhat[1]**2 + xhat[2]**2) ))
+            #xhat[0] = np.sqrt(np.abs( I0 - (xhat[1]**2 + xhat[2]**2) ))
+            xhat[0] = np.sqrt(np.abs(xhat[0]))
         elif IncModel == 'log':
-            xhat[0] = np.log( np.abs( I0 - (xhat[1]**2 + xhat[2]**2) ))
+            #xhat[0] = np.log( np.abs( I0 - (xhat[1]**2 + xhat[2]**2) ))
+            xhat[0] = np.log(np.abs(xhat[0]))
         return xhat
         
     #This is funciton given to the minimizer
@@ -246,7 +266,8 @@ def MonteCarloRun(Ntrials=1000, IncModel='sqrt', Estimator='Nonlin'):
         for p in range(len(probes)):  #calculate the intensity for each probe before using the esimator
             Imeas[k,p] = np.random.poisson(Itrue[p],1)[0]
         if Estimator == 'Nonlin':
-            xreg = GridSearchOptimize(Imeas[k,:])  # OptimizeLocal(xPhys2xReg(xtruephys),Imeas[k,:])
+            xreg = GridSearchOptimize(Imeas[k,:]) 
+            #xreg = OptimizeLocal(xPhys2xReg(xtruephys),Imeas[k,:]) # start with the perfect solution
         elif Estimator == 'Pairwise':
             xreg = PairwiseEstimator(Imeas[k,:])
         xhat[k,:] = xReg2xPhys(xreg,Estimator=Estimator,IncModel=IncModel)
