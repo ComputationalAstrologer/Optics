@@ -60,6 +60,7 @@ This assumes the same spacing of the spline knots in both directions on a rectan
 z - 1D vector of function values to be fit (not needed for __init__() )
 x - 1D vector of x coords corresponding to z.  must have len(x) == len(z)
 y - 1D vector of y coords corresponding to z.  must have len(y) == len(x)
+    -- x and y are likely the output of the np.meshgrid routine
 Nx - number of spline knots in x-direction
 Xmin - location (x coordinate) of leftmost spline knot
 Delta - distance (1D) between spline knots (same in both directions)
