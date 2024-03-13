@@ -27,7 +27,7 @@ import Bspline3 as BS  # this module is in MySplineToolsLocation
 #  4 pixel values: [minY, maxY, minX, maxX] (note the row,col order) 
 
 class EFC():
-    def __init__(self, HoleBndy=[227, 285, 314, 372], SpeckleFactor=10.):
+    def __init__(self, HoleBndy=[300, 328, 300, 328], SpeckleFactor=10.):
         if HoleBndy is not None:
             assert len(HoleBndy) == 4
             self.HoleShape = (HoleBndy[1]-HoleBndy[0]+1, HoleBndy[3]-HoleBndy[2]+1)
@@ -138,12 +138,24 @@ class EFC():
     
     #This uses the Newton Conjugate Grad method to find minima of a function
     #   from a number of random starting points.
-    #c - a dark hole starting point
-    def FindMaxima(self,c,npts=12,maxiter=30):
-        fun = self.CostCrossSNR
-        options={'disp':True, 'maxiter':30}
-        out = optimize.minimize(fun,c,args=(),method='Newton-CG',options=options,jac=True)
-        return out
+    def FindCrossMinima(self):
+        funB = self.CostCrossSNR
+        options={'disp':False, 'maxiter':15}
+        rnd = lambda scale : scale*(2*np.pi*np.random.rand(self.ndm**2) - np.pi)
+        nholes = 9
+        command_dh = []
+        cost_dh = []
+        command_c = []
+        cost_c = []
+        for k in range(nholes):
+          out = optimize.minimize(self.CostHoleDominant,rnd(1.),args=(),method='Newton-CG',options=options,jac=True)
+          command_dh.append(out['x'])
+          cost_dh.append(out['fun'])
+          out = optimize.minimize(self.CostCrossSNR,out['x'],args=(),method='Newton-CG',options=options,jac=True)
+          command_c.append(out['x'])
+          cost_c.append(out['fun'])
+          
+        return {'dh_commands': command_dh, 'cross_commands': command_c, 'dh_cost': cost_dh, 'cross_cost': cost_c}
     
     #This does the optimization over the dominant intensity to dig the dark hole
     #c0 - initial guess
