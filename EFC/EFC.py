@@ -11,23 +11,44 @@ In this simple model, the polarized detector fields are given by a spline coeffi
 """
 
 import numpy as np
+from os import path as ospath
 from sys import path
 from scipy import optimize
 import matplotlib.pyplot as plt
-machine = "homeLinux"
+#machine = "homeLinux"
+machine = "officeWindows"
 if machine == "homeLinux":
     MySplineToolsLocation = "/home/rfrazin/Py/Optics"
     PropMatLoc = "/home/rfrazin/Py/EFCSimData/"
-else: assert False
+elif machine == 'officeWindows':
+    MySplineToolsLocation = "E:/Python/Optics"
+    PropMatLoc = "E:/MyOpticalSetups/EFC\ Papers/DataArrays"
 path.insert(0, MySplineToolsLocation)
 import Bspline3 as BS  # this module is in MySplineToolsLocation
+
+HoleBndy = np.array([227, 285, 314, 372])
+SysXfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy'
+SysYfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy'
+SpecfieldXfn = 'SpeckleFieldFrom24x24screen_Ex.npy'
+SpecfieldYfn = 'SpeckleFieldFrom24x24screen_Ey.npy'
+fpsize = 512  # size of focal plane in pixels
+fplength = 20. #length of detector in mm
+Reduced = True
+if Reduced:
+    fpsize //= 2
+    HoleBndy //=2 
+    SysXfn = 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ex.npy'
+    SysYfn = 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ey.npy'
+    SpecfieldXfn = 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
+    SpecfieldYfn = 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
+
+
 
 #This assumes that the input light is linearly polarized in the X-direction
 #HoleBndy - Speficies the corners of the dark hole (inclusive).  It is a list or tuple with
 #  4 pixel values: [minY, maxY, minX, maxX] (note the row,col order) 
-
 class EFC():
-    def __init__(self, HoleBndy=[300, 328, 300, 328], SpeckleFactor=10.):
+    def __init__(self, HoleBndy=HoleBndy, SpeckleFactor=10.):
         if HoleBndy is not None:
             assert len(HoleBndy) == 4
             self.HoleShape = (HoleBndy[1]-HoleBndy[0]+1, HoleBndy[3]-HoleBndy[2]+1)
@@ -35,12 +56,12 @@ class EFC():
         else: self.HoleShape = (0,0)
         self.lamb = 1.  # wavelength in microns
         self.ndm = 21  # number of actuators (1D)
-        self.lamdpix = (512/20)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
+        self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
         self.SpeckleFactor = SpeckleFactor  # see self.PolIntensity.  This can be changed in its function call
-        SysX = np.load(PropMatLoc + 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy' )  # system matrices
-        SysY = np.load(PropMatLoc + 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy' )
-        SpecX = np.load(PropMatLoc + 'SpeckleFieldFrom24x24screen_Ex.npy')  # X polarized speckles
-        SpecY = np.load(PropMatLoc + 'SpeckleFieldFrom24x24screen_Ey.npy')  # y polarized speckles
+        SysX = np.load(PropMatLoc + SysXfn )  # system matrices
+        SysY = np.load(PropMatLoc + SysYfn )
+        SpecX = np.load(PropMatLoc + SpecfieldXfn )  # X polarized speckles
+        SpecY = np.load(PropMatLoc + SpecfieldYfn)  # y polarized speckles
         assert SysX.shape[1] == self.ndm**2
         assert SysY.shape == SysX.shape
         self.HoleBndy = HoleBndy
