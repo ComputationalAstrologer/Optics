@@ -15,20 +15,19 @@ from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
 import matplotlib.pyplot as plt
-machine = "homeLinux"
-#machine = "officeWindows"
+#machine = "homeLinux"
+machine = "officeWindows"
 if machine == "homeLinux":
     MySplineToolsLocation = "/home/rfrazin/Py/Optics"
     PropMatLoc = "/home/rfrazin/Py/EFCSimData/"
 elif machine == 'officeWindows':
-    assert False  # not setup correctly for pathinsert() below
     MySplineToolsLocation = "E:/Python/Optics"
-    PropMatLoc = "E:/MyOpticalSetups/EFC\ Papers/DataArrays"
+    PropMatLoc = "E:/MyOpticalSetups/EFC Papers/DataArrays"
 syspath.insert(0, MySplineToolsLocation)
 import Bspline3 as BS  # this module is in MySplineToolsLocation
 
 HoleBndy = np.array([227, 285, 314, 372])  #[Xmin, Xmax,Ymin,Ymax]  on 512x512
-Reduced = False
+Reduced = True
 
 Sxfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy'
 Syfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy'
@@ -60,10 +59,10 @@ class EFC():
         self.ndm = 21  # number of actuators (1D)
         self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
         self.SpeckleFactor = SpeckleFactor  # see self.PolIntensity.  This can be changed in its function call
-        self.Sx = np.load(PropMatLoc + Sxfn )  # Sytem matrices
-        self.Sy = np.load(PropMatLoc + Syfn )
-        self.Spx = np.load(PropMatLoc + SpecfieldXfn )  # X polarized speckles
-        self.Spy = np.load(PropMatLoc + SpecfieldYfn)  # y polarized speckles
+        self.Sx = np.load(ospath.join(PropMatLoc, Sxfn))  # Sytem matrices
+        self.Sy = np.load(ospath.join(PropMatLoc, Syfn))
+        self.Spx = np.load(ospath.join(PropMatLoc, SpecfieldXfn))  # X polarized speckles
+        self.Spy = np.load(ospath.join(PropMatLoc, SpecfieldYfn))  # y polarized speckles
         assert self.Sx.shape[1] == self.ndm**2
         assert self.Sy.shape == self.Sx.shape
         self.HoleBndy = HoleBndy
