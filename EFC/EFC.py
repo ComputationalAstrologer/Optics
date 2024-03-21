@@ -44,7 +44,9 @@ if Reduced:
     SpecfieldYfn = 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
-
+#===============================================================================
+#                      EFC Class starts here
+#==============================================================================
 #This assumes that the input light is linearly polarized in the X-direction
 #HoleBndy - Speficies the corners of the dark hole (inclusive).  It is a list or tuple with
 #  4 pixel values: [minX, maxX, minY, maxY] (note the row,col order) 
@@ -199,3 +201,27 @@ class EFC():
           cost_c.append(out['fun'])
           
         return {'dh_commands': command_dh, 'cross_commands': command_c, 'dh_cost': cost_dh, 'cross_cost': cost_c}
+
+#===============================================================================
+#                      EFC Class ends here
+#==============================================================================
+
+#this creates the b-spline basis coefficients corresponding to a linear phase,
+#  which behaves as an off-axis source.
+#For now, the off axis beam is displacesd on the x-axis
+#   - Warning!  this code and BS.BivariateCubicSPline disagree on the
+#   x and y directions
+#nc - the number of cycles per pupil
+#ndm - the DM is ndm x ndm
+def SplCoefs4LinearPhase(nc, ndm):
+   s = np.linspace(-np.pi, np.pi, 13*ndm)
+   sx, sy = np.meshgrid(s,s)
+   lp = np.exp(1j*nc*sy)  # linear phase function
+   sx = sx.flatten()
+   sy = sy.flatten()
+   lp = lp.flatten()
+   
+   #now set up cubic b-spline
+   cbs = BS.BivariateCubicSpline(sx, sy, ndm)
+   spco = cbs.GetSplCoefs(lp)
+   return spco
