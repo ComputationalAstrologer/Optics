@@ -26,18 +26,15 @@ elif machine == 'officeWindows':
 syspath.insert(0, MySplineToolsLocation)
 import Bspline3 as BS  # this module is in MySplineToolsLocation
 
-HoleBndy = np.array([227, 285, 314, 372])  #[Xmin, Xmax,Ymin,Ymax]  on 512x512
 Reduced = True
-
 Sxfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy'
 Syfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy'
 SpecfieldXfn = 'SpeckleFieldFrom24x24screen_Ex.npy'
 SpecfieldYfn = 'SpeckleFieldFrom24x24screen_Ey.npy'
 fpsize = 512  # size of focal plane in pixels
 fplength = 20. #length of detector in mm
-if Reduced:
-    fpsize //= 2
-    HoleBndy //=2 
+if Reduced:  #stuff averaged over 2x2 pixels in the image plane
+    fpsize //= 2 
     Sxfn = 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ex.npy'
     Syfn = 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ey.npy'
     SpecfieldXfn = 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
@@ -51,7 +48,7 @@ if Reduced:
 #HoleBndy - Speficies the corners of the dark hole (inclusive).  It is a list or tuple with
 #  4 pixel values: [minX, maxX, minY, maxY] (note the row,col order) 
 class EFC():
-    def __init__(self, HoleBndy=HoleBndy, SpeckleFactor=10.):
+    def __init__(self, HoleBndy, SpeckleFactor=10.):
         if HoleBndy is not None:
             assert len(HoleBndy) == 4
             self.HoleShape = (HoleBndy[3]-HoleBndy[2]+1, HoleBndy[1]-HoleBndy[0]+1)
