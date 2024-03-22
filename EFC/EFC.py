@@ -15,8 +15,8 @@ from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
 import matplotlib.pyplot as plt
-#machine = "homeLinux"
-machine = "officeWindows"
+machine = "homeLinux"
+#machine = "officeWindows"
 if machine == "homeLinux":
     MySplineToolsLocation = "/home/rfrazin/Py/Optics"
     PropMatLoc = "/home/rfrazin/Py/EFCSimData/"
@@ -63,8 +63,8 @@ class EFC():
         self.SpeckleFactor = SpeckleFactor  # see self.PolIntensity.  This can be changed in its function call
         self.Sx = np.load(ospath.join(PropMatLoc, Sxfn))  # Sytem matrices
         self.Sy = np.load(ospath.join(PropMatLoc, Syfn))
-        self.Spx = np.load(ospath.join(PropMatLoc, SpecfieldXfn))  # X polarized speckles
-        self.Spy = np.load(ospath.join(PropMatLoc, SpecfieldYfn))  # y polarized speckles
+        self.spx = np.load(ospath.join(PropMatLoc, SpecfieldXfn))  # X polarized speckles
+        self.spy = np.load(ospath.join(PropMatLoc, SpecfieldYfn))  # y polarized speckles
         assert self.Sx.shape[1] == self.ndm**2
         assert self.Sy.shape == self.Sx.shape
         self.HoleBndy = HoleBndy
@@ -72,17 +72,21 @@ class EFC():
         if HoleBndy is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
             sz = int(np.sqrt(self.Sx.shape[0]))
             lindex = []  # 1D pixel index of dark hole pixel
-            self.SpHx = self.Spx[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]  #trimmed speckle fields
-            self.SpHy = self.Spy[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]
+            duodex = []
+            self.sphx = self.spx[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]  #trimmed speckle fields
+            self.sphy = self.spy[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]
             for col in np.arange(HoleBndy[0], HoleBndy[1] + 1):  # range in X pixels
                 for row in np.arange(HoleBndy[2], HoleBndy[3] +1):  # range in Y pixels
                    lindex.append( np.ravel_multi_index((row,col), (sz,sz)) )
+                   duodex.append( (row,col) )
             assert len(lindex) == self.HoleShape[0]*self.HoleShape[1]
             self.Shx = np.zeros((len(lindex), self.ndm**2)).astype('complex')  #trimmed system matrices
             self.Shy = np.zeros((len(lindex), self.ndm**2)).astype('complex')
             for k in range(len(lindex)):
                 self.Shx[k,:] = self.Sx[lindex[k],:]
-                self.Shy[k,:] = self.Sy[lindex[k],:]    
+                self.Shy[k,:] = self.Sy[lindex[k],:]
+            self.lindex = lindex
+            self.duodex = duodex
         else: pass
         return(None)
     
@@ -103,17 +107,20 @@ class EFC():
         assert coef.shape == (nc,)
         assert XorY == 'X' or XorY == 'Y'
         if XorY == 'X': 
-            Sys = self.Sx
-            sp  = self.Spx
             if region == 'Hole':
                 Sys = self.Shx
-                sp = self.SpHx
-        else:
-            Sys = self.Sy
-            sp  = self.Spy
+                sp = self.sphx
+            else:  # 'Full'
+                Sys = self.Sx
+                sp  = self.spx
+        else:  # 'Y'
             if region == 'Hole':
                 Sys = self.Shy
-                sp  = self.SpHy
+                sp  = self.sphy
+            else:  #'Full'
+                Sys = self.Sy
+                sp  = self.spy
+
         if DMheight:
             assert np.iscomplexobj(coef) == False
             c = np.exp(1j*4.*np.pi*coef/self.lamb)
