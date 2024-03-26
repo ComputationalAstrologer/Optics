@@ -45,15 +45,12 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
 #                      EFC Class starts here
 #==============================================================================
 #This assumes that the input light is linearly polarized in the X-direction
-#HoleBndy - Speficies the corners of the dark hole (inclusive).  It is a list or tuple with
-#  4 pixel values: [minX, maxX, minY, maxY] (note the row,col order) 
+# - holepixels list (or array) of 1D pixel indices of the pixels in the dark hole.
+#    if None, there is no dark hole 
+#    A list such as this can be created by the non-member MakePixList() function.
+
 class EFC():
-    def __init__(self, HoleBndy, SpeckleFactor=10.):
-        if HoleBndy is not None:
-            assert len(HoleBndy) == 4
-            self.HoleShape = (HoleBndy[3]-HoleBndy[2]+1, HoleBndy[1]-HoleBndy[0]+1)
-            assert self.HoleShape[0] > 0 and self.HoleShape[1] > 0 
-        else: self.HoleShape = (0,0)
+    def __init__(self, holepixels=None, SpeckleFactor=10.):
         self.lamb = 1.  # wavelength in microns
         self.ndm = 21  # number of actuators (1D)
         self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
@@ -64,26 +61,20 @@ class EFC():
         self.spy = np.load(ospath.join(PropMatLoc, SpecfieldYfn))  # y polarized speckles
         assert self.Sx.shape[1] == self.ndm**2
         assert self.Sy.shape == self.Sx.shape
-        self.HoleBndy = HoleBndy
+        self.spx = self.spx.flatten()
+        self.spy = self.spy.flatten()
+        self.holepixels = holepixels
         
-        if HoleBndy is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
-            sz = int(np.sqrt(self.Sx.shape[0]))
-            lindex = []  # 1D pixel index of dark hole pixel
-            duodex = []
-            self.sphx = self.spx[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]  #trimmed speckle fields
-            self.sphy = self.spy[HoleBndy[2]:HoleBndy[3] + 1, HoleBndy[0]:HoleBndy[1] +1]
-            for col in np.arange(HoleBndy[0], HoleBndy[1] + 1):  # range in X pixels
-                for row in np.arange(HoleBndy[2], HoleBndy[3] +1):  # range in Y pixels
-                   lindex.append( np.ravel_multi_index((row,col), (sz,sz)) )
-                   duodex.append( (row,col) )
-            assert len(lindex) == self.HoleShape[0]*self.HoleShape[1]
-            self.Shx = np.zeros((len(lindex), self.ndm**2)).astype('complex')  #trimmed system matrices
-            self.Shy = np.zeros((len(lindex), self.ndm**2)).astype('complex')
-            for k in range(len(lindex)):
-                self.Shx[k,:] = self.Sx[lindex[k],:]
-                self.Shy[k,:] = self.Sy[lindex[k],:]
-            self.lindex = lindex
-            self.duodex = duodex
+        if holepixels is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
+            self.Shx  = np.zeros((len(holepixels), self.ndm**2)).astype('complex')  #trimmed system matrices
+            self.Shy  = np.zeros((len(holepixels), self.ndm**2)).astype('complex')
+            self.sphx = np.zeros((len(holepixels),)).astype('complex')
+            self.sphy = np.zeros((len(holepixels),)).astype('complex')
+            for k in range(len(holepixels)):
+                self.Shx[k,:] = self.Sx[holepixels[k],:]
+                self.Shy[k,:] = self.Sy[holepixels[k],:]
+                self.sphx[k]  = self.spx[holepixels[k]]
+                self.sphy[k]  = self.spy[holepixels[k]]
         else: pass
         return(None)
     
@@ -128,7 +119,7 @@ class EFC():
             if return_grad:
                 dc = np.ones(coef.shape).astype('complex')*1.0
         f = Sys.dot(c)
-        f += SpeckleFactor*sp.flatten()
+        f += SpeckleFactor*sp
         I = np.real(f*np.conj(f))
         if not return_grad:
             return I
