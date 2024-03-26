@@ -229,3 +229,24 @@ def SplCoefs4LinearPhase(nc, ndm):
    cbs = BS.BivariateCubicSpline(sx, sy, ndm)
    spco = cbs.GetSplCoefs(lp)
    return spco
+
+
+#This makes a list of the 1D pixel indices corresponding to a rectangular
+# region (specified by its corners) within a flattened 2D array.
+#corners - list (or array) corresponding to the 2D coords of the corners of the
+# desired region in the following order [Xmin, Xmax, Ymin, Ymax].  The boundaries
+# are inclusive.
+#BigArrayShape a tuple (or whatever) corresponding the shape of the larger array 
+def MakePixList(corners, BigArrayShape):
+    assert len(BigArrayShape) == 2
+    assert corners[2] <= BigArrayShape[0] and corners[3] <= BigArrayShape[0]
+    assert corners[0] <= BigArrayShape[1] and corners[2] <= BigArrayShape[1]
+    pixlist = []
+    rows = np.arange(corners[2], corners[3]+1)  # 'y'
+    cols = np.arange(corners[0], corners[1]+1)  # 'x'
+    ff = lambda r,c : np.ravel_multi_index((r,c), (BigArrayShape[0],BigArrayShape[1]))
+    for r in rows:
+        for c in cols:
+            pixlist.append(ff(r,c))
+    return pixlist
+    
