@@ -64,6 +64,8 @@ class EFC():
         self.spx = self.spx.flatten()
         self.spy = self.spy.flatten()
         self.holepixels = holepixels
+        if len(holepixels) == 4:
+            print("Just so you know, the dark hole only has 4 pixels.")
         
         if holepixels is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
             self.Shx  = np.zeros((len(holepixels), self.ndm**2)).astype('complex')  #trimmed system matrices
