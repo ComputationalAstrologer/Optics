@@ -80,6 +80,23 @@ class EFC():
         else: pass
         return(None)
     
+    #This makes the 'M matrix', which is linearized constraints to keep the dominant field dark
+    #  while probing the cross field.
+    #c0 - the linearization point 
+    #smallpixlist - the list of 1D pixel indices within the dark hole that are
+    #  to be kept dark while the cross field is probed.
+    def MakeMmat(self, c0, smallpixlist):
+        lpl = len(smallpixlist); 
+        spl = smallpixlist
+        Sx = self.Sx
+        cc0 = np.cos(c0); sc0 = np.sin(c0)
+        M = np.zeros(2*lpl, self.Sx.shape[1])
+        for k in range(lpl):
+            M[k      ] = np.real(Sx[spl[k],:])*cc0 - np.imag(Sx[spl[k],:])*sc0
+            M[k + lpl] = np.real(Sx[spl[k],:])*sc0 + np.imag(Sx[spl[k],:])*cc0
+        return M
+    
+    
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
     #The spline coefficient vector must have a shape (self.ndm**2,)
     #XorY - select the desired polarization 'X' or 'Y'
