@@ -64,8 +64,7 @@ class EFC():
         self.spx = self.spx.flatten()
         self.spy = self.spy.flatten()
         self.holepixels = holepixels
-        if len(holepixels) == 4:
-            print("Just so you know, the dark hole only has 4 pixels.")
+        print("The dark hole has", str(len(holepixels)) ,"pixels.")
         
         if holepixels is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
             self.Shx  = np.zeros((len(holepixels), self.ndm**2)).astype('complex')  #trimmed system matrices
@@ -90,7 +89,7 @@ class EFC():
         spl = smallpixlist
         Sx = self.Sx
         cc0 = np.cos(c0); sc0 = np.sin(c0)
-        M = np.zeros(2*lpl, self.Sx.shape[1])
+        M = np.zeros((2*lpl, self.Sx.shape[1]))
         for k in range(lpl):
             M[k      ] = np.real(Sx[spl[k],:])*cc0 - np.imag(Sx[spl[k],:])*sc0
             M[k + lpl] = np.real(Sx[spl[k],:])*sc0 + np.imag(Sx[spl[k],:])*cc0
@@ -102,13 +101,14 @@ class EFC():
     #XorY - select the desired polarization 'X' or 'Y'
     #region - if 'Hole' only the intensity inside self.HoleBndy is computed.
     #            'Full' the intensity is calculated over the entire range
-    #DMheight - if True the coefficient vector is interpreted as a DM height in microns and must be real-valued
-    #          - if False it is simply a coefficient and can be complex valued
-    #return_grad - return the gradient.  For now, only works when DMheight is True
+    #DM_mode - 'height': coef must be real-valued and the phasor phase is 4pi*coef/self.lambda 
+    #        - 'phase' : coef must be real-valued and the phasor phase is coef itself
+    #return_grad - return the gradient.  
     #SpeckleFactor - multiplier for additive speckle field.  Can be 0.  None corresponds to defaul (see __init__)
-    def PolIntensity(self, coef, XorY='X', region='Hole', DMheight=True, return_grad=True,
+    def PolIntensity(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, 
                      SpeckleFactor=None):
         assert region == 'Hole' or region == 'Full'
+        assert DM_mode in ['height', 'phase']
         nc = self.ndm**2
         if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
         assert coef.shape == (nc,)
@@ -128,38 +128,43 @@ class EFC():
                 Sys = self.Sy
                 sp  = self.spy
 
-        if DMheight:
+        if DM_mode == 'height':
             assert np.iscomplexobj(coef) == False
             c = np.exp(1j*4.*np.pi*coef/self.lamb)
             if return_grad:
                 dc = 1j*4.*np.pi*c/self.lamb
-        else:
-            c = 1.0*coef
+        elif DM_mode == 'phase':
+            assert np.iscomplexobj(coef) == False
+            c = np.exp(1j*coef)
             if return_grad:
-                dc = np.ones(coef.shape).astype('complex')*1.0
+                dc = 1j*c
+        else:  # not an option   
+            assert False
+            
         f = Sys.dot(c)
         f += SpeckleFactor*sp
         I = np.real(f*np.conj(f))
         if not return_grad:
             return I
-        df = Sys*dc # speckles don't depend on c in this approximation.  This is the same as Sy.dot(diag(dc))
+        df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.
         dI = 2*np.real(np.conj(f)*df.T).T
         return (I, dI)
     
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector
-    def CostHoleDominant(self, c, return_grad=True):
+    #scale - setting this to 10^6 seems to help the Newton-CG minimizer
+    def CostHoleDominant(self, c, return_grad=True, scale=1.e6):
         assert np.iscomplexobj(c) is False
         assert c.shape == (self.Sx.shape[1],)
         if return_grad:
-            I, dI = self.PolIntensity(c,XorY='X',region='Hole',DMheight=True,return_grad=True)
+            I, dI = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=True)
             cost = np.sum(I)
             dcost = np.sum(dI, axis=0)
-            return (cost, dcost)
+            return (scale*cost, scale*dcost)
         else:
-            I     = self.PolIntensity(c,XorY='X',region='Hole',DMheight=True,return_grad=False)
+            I     = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=False)
             cost = np.sum(I)
-            return cost
+            return scale*cost
         
     #This does the optimization over the dominant intensity to dig the dark hole
     #c0 - initial guess
@@ -177,6 +182,8 @@ class EFC():
             constr = optimize.LinearConstraint(conmat, lb=lb, ub=ub)
             out = optimize.minimize(self.CostHoleDominant, c0, args=(),options=options,
                                     method='SLSQP',jac=True,constraints=(constr,))
+            ffvalue = self.CostHoleDominant(out['x'], return_grad=False)
+            print("Final Dark Hole Cost = ", ffvalue)
         return out
     
     #This calculates something like signal-to-noise ratio for the cross polarization
