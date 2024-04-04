@@ -45,12 +45,14 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
 #                      EFC Class starts here
 #==============================================================================
 #This assumes that the input light is linearly polarized in the X-direction
-# - holepixels list (or array) of 1D pixel indices of the pixels in the dark hole.
+# - HolePixels list (or array) of 1D pixel indices of the pixels in the dark hole.
 #    if None, there is no dark hole 
 #    A list such as this can be created by the non-member MakePixList() function.
 
 class EFC():
-    def __init__(self, holepixels=None, SpeckleFactor=10.):
+    def __init__(self, HolePixels=None, SpeckleFactor=10.):
+        print("The dark hole has", str(len(HolePixels)) ,"pixels.")
+        self.HolePixels = HolePixels
         self.lamb = 1.  # wavelength in microns
         self.ndm = 21  # number of actuators (1D)
         self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
@@ -63,19 +65,18 @@ class EFC():
         assert self.Sy.shape == self.Sx.shape
         self.spx = self.spx.flatten()
         self.spy = self.spy.flatten()
-        self.holepixels = holepixels
-        print("The dark hole has", str(len(holepixels)) ,"pixels.")
+        self.CostScale = None
         
-        if holepixels is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
-            self.Shx  = np.zeros((len(holepixels), self.ndm**2)).astype('complex')  #trimmed system matrices
-            self.Shy  = np.zeros((len(holepixels), self.ndm**2)).astype('complex')
-            self.sphx = np.zeros((len(holepixels),)).astype('complex')
-            self.sphy = np.zeros((len(holepixels),)).astype('complex')
-            for k in range(len(holepixels)):
-                self.Shx[k,:] = self.Sx[holepixels[k],:]
-                self.Shy[k,:] = self.Sy[holepixels[k],:]
-                self.sphx[k]  = self.spx[holepixels[k]]
-                self.sphy[k]  = self.spy[holepixels[k]]
+        if HolePixels is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
+            self.Shx  = np.zeros((len(HolePixels), self.ndm**2)).astype('complex')  #trimmed system matrices
+            self.Shy  = np.zeros((len(HolePixels), self.ndm**2)).astype('complex')
+            self.sphx = np.zeros((len(HolePixels),)).astype('complex')
+            self.sphy = np.zeros((len(HolePixels),)).astype('complex')
+            for k in range(len(HolePixels)):
+                self.Shx[k,:] = self.Sx[HolePixels[k],:]
+                self.Shy[k,:] = self.Sy[HolePixels[k],:]
+                self.sphx[k]  = self.spx[HolePixels[k]]
+                self.sphy[k]  = self.spy[HolePixels[k]]
         else: pass
         return(None)
     
@@ -154,6 +155,7 @@ class EFC():
     #c - DM command vector
     #scale - setting this to 10^6 seems to help the Newton-CG minimizer
     def CostHoleDominant(self, c, return_grad=True, scale=1.e6):
+        self.CostScale = scale
         assert np.iscomplexobj(c) is False
         assert c.shape == (self.Sx.shape[1],)
         if return_grad:
@@ -166,13 +168,37 @@ class EFC():
             cost = np.sum(I)
             return scale*cost
         
+    #This calculates the Hessian corresponding to CostHoleDominant.   See Frazin (2018) JOSAA v35, p594   
+    #Note that the intensity of each detector pixel has its own Hessian, which would be a large object.
+    #  This Hessian assumes that the cost is the sum of the pixel intensities in the dark hole
+    def HessianCostHoleDominant(self, coef, SpeckleFactor=None):
+        if self.CostScale is None:
+            print("You must run CostHoleDominant to set self.CostScale first.")
+            assert False
+        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
+        Sys = self.Shx  #  hole system matrix - see self.PolIntensity
+        f = Sys.dot(np.exp(1j*coef))
+        f += SpeckleFactor*self.sphx  # hole speckle field
+        df = 1j*Sys*np.exp(1j*coef)  # same as Sys@np.diag(np.exp(1j*coef))
+        H = np.zeros((len(coef),len(coef)))
+        for m in range(Sys.shape[0]):  #loop over pixels
+            H += 2*np.real( np.outer(df[m,:], df[m,:].conj()) )
+            H += 2*np.real(np.diag( 1j*df[m,:]*f[m].conj() ))  # additional term for diagonal elements
+        return H*self.CostScale
+        
     #This does the optimization over the dominant intensity to dig the dark hole
     #c0 - initial guess
-    #method - options are 'NCG' (Newton Conj Grad), 'SLSQP'
+    #method - options are 'NCG' (Newton-ConjGrad), 'CG' (ConjGrad), 'SLSQP'
+    #NCG with the analytical Hessian is great, but applying CG afterwards is effective, too.
     def DigHoleDominant(self, c0, method='NCG',maxiter=20):
         if method == 'NCG':  #Newton-CG set up.  leads to large command values without a penalty
            options={'disp':True, 'maxiter':maxiter}
-           out = optimize.minimize(self.CostHoleDominant,c0,args=(),method='Newton-CG',options=options,jac=True)
+           out = optimize.minimize(self.CostHoleDominant,c0,args=(),method='Newton-CG',options=options,
+                                   jac=True,hess=self.HessianCostHoleDominant)
+        elif method == 'CG':
+           options={'disp':True, 'maxiter':maxiter}
+           out = optimize.minimize(self.CostHoleDominant,c0,args=(),method='CG',options=options,jac=True)
+
         elif method == 'SLSQP':   #SLSQP set up
             options = {'disp': True, 'maxiter':10 }
             maxabs = np.pi/12
