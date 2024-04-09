@@ -85,6 +85,7 @@ class EFC():
     #c0 - the linearization point 
     #smallpixlist - the list of 1D pixel indices within the dark hole that are
     #  to be kept dark while the cross field is probed.
+    #With U,S,V = np.linalg.svd(M)  the last rows of V, e.g., V[k,:], are basis vectors corresponding to the small SVs of M
     def MakeMmat(self, c0, smallpixlist):
         lpl = len(smallpixlist); 
         spl = smallpixlist
