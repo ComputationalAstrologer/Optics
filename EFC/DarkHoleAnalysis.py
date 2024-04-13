@@ -5,6 +5,7 @@ Created on Tue Apr  9 18:09:24 2024
 @author: rfrazin
 
 This provides analysis based on EFC class in EFC.py. 
+It's kind of a grabbag of random crap
 
 """
 
@@ -22,6 +23,10 @@ G = crap['G']
 #dark hole command
 CGbest = crap['CGbest']; del(crap)
 
+
+
+assert False
+
 #make the M matrix for a 14x14 spot inside the dark hole
 smpixlist = MakePixList([150,163,150,163],(256,256))
 #the rows of V, e.g. V[3,:] form the singular basis of the domain of M 
@@ -35,15 +40,39 @@ plt.xlabel('index'); plt.ylabel('log10(Singular Values)');
 
 
 Iddx = lambda v : np.mean(G.PolIntensity(CGbest + v, XorY='X', region='Full', DM_mode='phase', return_grad=False)[smpixlist])
-alpha = np.linspace(-1,1,101)
-Ibg = np.zeros(alpha.shape)
-Ism = np.zeros(alpha.shape)
-for k in range(len(alpha)):
-    Ibg[k] = Iddx( alpha[k]*V[ 200,:])
-    Ism[k] = Iddx( alpha[k]*V[-11,:])
+Iddy = lambda v : np.mean(G.PolIntensity(CGbest + v, XorY='Y', region='Full', DM_mode='phase', return_grad=False)[smpixlist])
+alpha = np.linspace(0,12,91)
+ivals = np.arange(370,441)
+Ix = np.zeros((len(ivals),len(alpha)))
+Iy = 0.*Ix
+for ki in range(len(ivals)):
+    print('ki =', ki)
+    for k in range(len(alpha)):
+        Ix[ki, k] = Iddx(V[ivals[ki],:]*alpha[k])
+        Iy[ki, k] = Iddy(V[ivals[ki],:]*alpha[k])
 
-fig(); plt.plot(alpha,np.log10(Ibg),'k:',alpha,np.log10(Ism),'r-'); 
-plt.title("DarkDark Intensity as a fcn of $\\alpha$"); plt.xlabel('$\\alpha$'); plt.xlabel('Mean Intensity');
+fig(); plt.plot(alpha,np.log10(Ix.T)); plt.title('X');
+fig(); plt.plot(alpha,np.log10(Iy.T)); plt.title('Y');
+
+
+
+#this is slow
+#for ki in range(441):
+#    for k in range(len(alpha)):
+#        Ix[ki,k] = Iddx( alpha[k]*V[ki,:] )
+#        Iy[ki,k] = Iddy( alpha[k]*V[ki,:] )
+
+
+#Ibg = np.zeros(alpha.shape)
+#Ism = np.zeros(alpha.shape)
+#Icr = np.zeros(alpha.shape)
+#for k in range(len(alpha)):
+#    Ibg[k] = Iddx( alpha[k]*V[ 2,:])
+#    Ism[k] = Iddx( alpha[k]*V[-2,:])
+#    Icr[k] = Iddy( alpha[k]*V[-2,:])
+
+#fig(); plt.plot(alpha,np.log10(Ibg),'k:',alpha,np.log10(Icr),'bx-' ,alpha,np.log10(Ism),'r-.'); 
+#plt.title("DarkDark Intensity as a fcn of $\\alpha$"); plt.xlabel('$\\alpha$'); plt.ylabel('Mean Intensity');
 
 
 

@@ -35,10 +35,10 @@ fpsize = 512  # size of focal plane in pixels
 fplength = 20. #length of detector in mm
 if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     fpsize //= 2 
-    Sxfn = 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ex.npy'
-    Syfn = 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ey.npy'
-    SpecfieldXfn = 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
-    SpecfieldYfn = 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
+    Sxfn = 'ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ex.npy'  # 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ex.npy'
+    Syfn = 'ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ey.npy'  # 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ey.npy'
+    SpecfieldXfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
+    SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
 #===============================================================================
@@ -50,11 +50,12 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
 #    A list such as this can be created by the non-member MakePixList() function.
 
 class EFC():
-    def __init__(self, HolePixels=None, SpeckleFactor=10.):
-        print("The dark hole has", str(len(HolePixels)) ,"pixels.")
+    def __init__(self, HolePixels=None, SpeckleFactor=0.):
+        if HolePixels is not None:
+            print("The dark hole has", str(len(HolePixels)) ,"pixels.")
         self.HolePixels = HolePixels
         self.lamb = 1.  # wavelength in microns
-        self.ndm = 21  # number of actuators (1D)
+        self.ndm = 33  # number of actuators (1D)
         self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
         self.SpeckleFactor = SpeckleFactor  # see self.PolIntensity.  This can be changed in its function call
         self.Sx = np.load(ospath.join(PropMatLoc, Sxfn))  # Sytem matrices
@@ -152,6 +153,23 @@ class EFC():
         dI = 2*np.real(np.conj(f)*df.T).T
         return (I, dI)
     
+    #This is a cost function for a bright hill in the cross polarization ('Y')
+    #c - DM command vector
+    #scale - setting this to 10^? seems to help the Newton-CG minimizer
+    def CostHillCross(self, c, return_grad=True, scale=1.e11):
+        self.CostScale = scale
+        assert np.iscomplexobj(c) is False
+        assert c.shape == (self.Sx.shape[1],)
+        if return_grad:
+            I, dI = self.PolIntensity(c,XorY='Y',region='Hole',DM_mode='phase',return_grad=True)
+            cost = - np.sum(I)
+            dcost = - np.sum(dI, axis=0)
+            return (scale*cost, scale*dcost)
+        else:
+            I     = self.PolIntensity(c,XorY='Y',region='Hole',DM_mode='phase',return_grad=False)
+            cost = - np.sum(I)
+            return scale*cost
+
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector
     #scale - setting this to 10^6 seems to help the Newton-CG minimizer
@@ -169,6 +187,24 @@ class EFC():
             cost = np.sum(I)
             return scale*cost
         
+    #This calculates the Hessian corresponding to CostHillCross.   See Frazin (2018) JOSAA v35, p594   
+    #Note that the intensity of each detector pixel has its own Hessian, which would be a large object.
+    #  This Hessian assumes that the cost is the sum of the pixel intensities in the dark hole
+    def HessianCostHillCross(self, coef, SpeckleFactor=None):
+        if self.CostScale is None:
+            print("You must run CostHillCross to set self.CostScale first.")
+            assert False
+        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
+        Sys = self.Shy  #  hole system matrix - see self.PolIntensity
+        f = Sys.dot(np.exp(1j*coef))
+        f += SpeckleFactor*self.sphy  # hole speckle field
+        df = 1j*Sys*np.exp(1j*coef)  # same as Sys@np.diag(np.exp(1j*coef))
+        H = np.zeros((len(coef),len(coef)))
+        for m in range(Sys.shape[0]):  #loop over pixels
+            H += -2*np.real( np.outer(df[m,:], df[m,:].conj()) )
+            H += -2*np.real(np.diag( 1j*df[m,:]*f[m].conj() ))  # additional term for diagonal elements
+        return H*self.CostScale
+
     #This calculates the Hessian corresponding to CostHoleDominant.   See Frazin (2018) JOSAA v35, p594   
     #Note that the intensity of each detector pixel has its own Hessian, which would be a large object.
     #  This Hessian assumes that the cost is the sum of the pixel intensities in the dark hole
