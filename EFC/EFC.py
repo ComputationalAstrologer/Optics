@@ -87,9 +87,9 @@ class EFC():
     #smallpixlist - the list of 1D pixel indices within the dark hole that are
     #  to be kept dark while the cross field is probed.
     #With U,S,V = np.linalg.svd(M)  the last rows of V, e.g., V[k,:], are basis vectors corresponding to the small SVs of M
-    def MakeMmat(self, c0, smallpixlist):
-        lpl = len(smallpixlist); 
-        spl = smallpixlist
+    def MakeMmat(self, c0, pixlist):
+        lpl = len(pixlist); 
+        spl = pixlist
         Sx = self.Sx
         cc0 = np.cos(c0); sc0 = np.sin(c0)
         M = np.zeros((2*lpl, self.Sx.shape[1]))
@@ -97,6 +97,19 @@ class EFC():
             M[k      ] = np.real(Sx[spl[k],:])*cc0 - np.imag(Sx[spl[k],:])*sc0
             M[k + lpl] = np.real(Sx[spl[k],:])*sc0 + np.imag(Sx[spl[k],:])*cc0
         return M
+    
+    def MakeNmat(self, c0, pixlist, sv_thresh=1.e-7):
+        M = self.MakeMmat(c0, pixlist)
+        UM, SM, VM = np.linalg.svd(M)  # the ROWS of VM, e.g., VM[0,:] are the singular vectors 
+        svals = np.zeros(len(c0))
+        svals[:len(SM)] = SM
+        isv = np.where(svals < SM[0]*sv_thresh)[0]
+        VM = VM.T # now the columns of VM and the singular vectors
+        V = np.zeros(len(isv),VM.shape[1])
+        for k in range(len(isv)):
+            V[k,:] = VM[isv[k],:]
+        N = self.Shy@V.T        
+        return N
     
     
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
