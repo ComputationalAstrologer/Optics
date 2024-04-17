@@ -27,6 +27,7 @@ syspath.insert(0, MySplineToolsLocation)
 import Bspline3 as BS  # this module is in MySplineToolsLocation
 
 Reduced = True
+if not Reduced: assert False  # the fplength is problematic
 Sxfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy'
 Syfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy'
 SpecfieldXfn = 'SpeckleFieldFrom24x24screen_Ex.npy'
@@ -56,7 +57,9 @@ class EFC():
         self.HolePixels = HolePixels
         self.lamb = 1.  # wavelength in microns
         self.ndm = 33  # number of actuators (1D)
-        self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
+        #self.lamdpix = (fpsize/fplength)*5*800*(self.lamb*1.e-3)/(21*0.3367) # "lambda/D" in pixel units, i.e., (pixels per mm)*magnification*focal length*lambda/diameter
+        self.lamdpix = 10.
+        if Reduced: self.lamdpix = 5.
         self.SpeckleFactor = SpeckleFactor  # see self.PolIntensity.  This can be changed in its function call
         self.Sx = np.load(ospath.join(PropMatLoc, Sxfn))  # Sytem matrices
         self.Sy = np.load(ospath.join(PropMatLoc, Syfn))
@@ -105,11 +108,11 @@ class EFC():
         svals[:len(SM)] = SM
         isv = np.where(svals < SM[0]*sv_thresh)[0]
         VM = VM.T # now the columns of VM and the singular vectors
-        V = np.zeros(len(isv),VM.shape[1])
+        V = np.zeros((len(isv),VM.shape[1]))
         for k in range(len(isv)):
             V[k,:] = VM[isv[k],:]
         N = self.Shy@V.T        
-        return N
+        return (N,V)
     
     
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
