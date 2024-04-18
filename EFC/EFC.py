@@ -106,7 +106,10 @@ class EFC():
     #c0 - reference DM command, probably corresponding to a dark hole
     #pixlist - list of pixels that define the M matrix
     #sv_thresh the singular value ration used to define the effective null space of M
-    def GetNull(self, c0, pixlist, sv_thresh=1.e-7):
+    #   the 10^-3 value is chosen by comparing the SVs of self.Shx to the norms of
+    #   vectors obtained by self.Shy@VM[k,:] and examining the slopes of the two curves.
+    #   If you do this you will see that the cross norms decay more slowly at first
+    def GetNull(self, c0, pixlist, sv_thresh=1.e-3):
         M = self.MakeMmat(c0, pixlist)
         UM, SM, VM = np.linalg.svd(M)  # the ROWS of VM, e.g., VM[0,:] are the singular vectors 
         svals = np.zeros(len(c0))
@@ -117,6 +120,70 @@ class EFC():
         for k in range(len(isv)):
             V[:,k] = VM[:,isv[k]]
         return V
+    
+    #This calculates Ey on self.HolePixels when the DM command is defined in
+    #  terms of basis vectors
+    #This does not include the speckle field.  In terms of the simulation, it is the model field
+    #The idea is that the basis vectors in a useful effective null space for
+    #  dominant field
+    #a  - vector of null space coefficients. must have len(a) == Vn.shape[1]
+    #c0 - initial (dark hole) DM command
+    #Vn - the columns of Vn form the new basis.  See self.MakeMmat
+    #return_grad - if True it returns the derivatives with respect to the coefficient vector a
+    def CrossFieldNewBasis(self, a, c0, Vn, return_grad=True):
+        assert len(a) == Vn.shape[1]
+        Vna = Vn@a  # phasor = np.exp(1j*Vn@a)
+        S = self.Shy*np.exp(1j*c0)  # equiv to self.Shy@np.diag(np.exp(1j*c0))
+        ey_re = np.real(S)@np.cos(Vna) - np.imag(S)@np.sin(Vna)  # real part of field
+        ey_im = np.real(S)@np.sin(Vna) + np.imag(S)@np.cos(Vna)  # imag part of field
+        if not return_grad:
+            return (ey_re, ey_im)
+        else:
+            Vnc = (Vn.T*np.cos(Vna)).T
+            Vns = (Vn.T*np.sin(Vna)).T
+            dr = - np.real(S)@Vns - np.imag(S)@Vnc
+            di =   np.real(S)@Vnc - np.imag(S)@Vns
+            return (ey_re, ey_im, dr, di)
+        
+    #This is a cost function for minimizing the target (see below) corresponding
+    #  to real or imag component of the cross field
+    #a - coefficient vector of the null space basis, Vn
+    #target - quantity to be minimized.  options are 'Re', '-Re', 'Im', '-Im'
+    #c0 - dark hole command for the dominant field
+    #Vn - matrix with null space vectors, see self.GetNull() 
+    #return_grad (with respect to a)
+    def CostCrossField(self, a, target, c0, Vn, return_grad=False):
+        assert target in ['Re','-Re','Im','-Im']
+        if not return_grad:
+            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            if target == 'Re':
+                cost = re.sum()
+            elif target == '-Re':
+                cost = -1.*re.sum()
+            elif target == 'Im':
+                cost = im.sum()
+            else:  # '-Im'
+                cost = -1.*im.sum()
+            return cost
+        else:
+            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True)
+            if target == 'Re':
+                cost = re.sum()
+                dcost = dre.sum(axis=0)
+            elif target == '-Re':
+                cost = -1.*re.sum()
+                dcost = -1*dre.sum(axis=0)
+            elif target == 'Im':
+                cost = im.sum()
+                dcost = dim.sum(axis=0)
+            else:  # '-Im'
+                cost = -1.*im.sum()
+                dcost = -1.*dim.sum(axis=0)
+            return cost, dcost
+    
+    #This sets up optimizations for minimizing the signed cross fields
+    def OptCrossField(self, a, target, method='NCG',maxiter=20):
+        return None
     
     
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
@@ -173,23 +240,6 @@ class EFC():
         dI = 2*np.real(np.conj(f)*df.T).T
         return (I, dI)
     
-    #This is a cost function for a bright hill in the cross polarization ('Y')
-    #c - DM command vector
-    #scale - setting this to 10^? seems to help the Newton-CG minimizer
-    def CostHillCross(self, c, return_grad=True, scale=1.e11):
-        self.CostScale = scale
-        assert np.iscomplexobj(c) is False
-        assert c.shape == (self.Sx.shape[1],)
-        if return_grad:
-            I, dI = self.PolIntensity(c,XorY='Y',region='Hole',DM_mode='phase',return_grad=True)
-            cost = - np.sum(I)
-            dcost = - np.sum(dI, axis=0)
-            return (scale*cost, scale*dcost)
-        else:
-            I     = self.PolIntensity(c,XorY='Y',region='Hole',DM_mode='phase',return_grad=False)
-            cost = - np.sum(I)
-            return scale*cost
-
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector
     #scale - setting this to 10^6 seems to help the Newton-CG minimizer
@@ -269,6 +319,29 @@ class EFC():
             print("Final Dark Hole Cost = ", ffvalue)
         return out
     
+    
+    #==========================#
+    #  scrapyard for EFC class #
+    #==========================#
+    
+    #This is a cost function for a bright hill in the cross polarization ('Y')
+    #c - DM command vector
+    #scale - setting this to 10^? seems to help the Newton-CG minimizer
+    def _CostHillCross(self, c, return_grad=True, scale=1.e11):
+        assert False  # this approach doesn't work
+        self.CostScale = scale
+        assert np.iscomplexobj(c) is False
+        assert c.shape == (self.Sx.shape[1],)
+        if return_grad:
+            I, dI = self.PolIntensity(c,XorY='Y',region='Hole',DM_mode='phase',return_grad=True)
+            cost = - np.sum(I)
+            dcost = - np.sum(dI, axis=0)
+            return (scale*cost, scale*dcost)
+        else:
+            I     = self.PolIntensity(c,XorY='Y',region='Hole',DM_mode='phase',return_grad=False)
+            cost = - np.sum(I)
+            return scale*cost
+
     #This calculates something like signal-to-noise ratio for the cross polarization
     #metric - the various options correspond to:
     #  'A' - Iy/(const + Ix)
