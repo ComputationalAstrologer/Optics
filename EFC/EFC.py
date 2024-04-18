@@ -87,10 +87,11 @@ class EFC():
     #This makes the 'M matrix', which is linearized constraints to keep the dominant field dark
     #  while probing the cross field.
     #c0 - the linearization point 
-    #smallpixlist - the list of 1D pixel indices within the dark hole that are
+    #pixlist - the list of 1D pixel indices within the dark hole that are
     #  to be kept dark while the cross field is probed.
     #With U,S,V = np.linalg.svd(M)  the last rows of V, e.g., V[k,:], are basis vectors corresponding to the small SVs of M
-    def MakeMmat(self, c0, pixlist):
+    def MakeMmat(self, c0, pixlist=None):
+        if pixlist is None: pixlist = self.HolePixels
         lpl = len(pixlist); 
         spl = pixlist
         Sx = self.Sx
@@ -100,19 +101,22 @@ class EFC():
             M[k      ] = np.real(Sx[spl[k],:])*cc0 - np.imag(Sx[spl[k],:])*sc0
             M[k + lpl] = np.real(Sx[spl[k],:])*sc0 + np.imag(Sx[spl[k],:])*cc0
         return M
-    
-    def MakeNmat(self, c0, pixlist, sv_thresh=1.e-7):
+
+    #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmatrix()  )
+    #c0 - reference DM command, probably corresponding to a dark hole
+    #pixlist - list of pixels that define the M matrix
+    #sv_thresh the singular value ration used to define the effective null space of M
+    def GetNull(self, c0, pixlist, sv_thresh=1.e-7):
         M = self.MakeMmat(c0, pixlist)
         UM, SM, VM = np.linalg.svd(M)  # the ROWS of VM, e.g., VM[0,:] are the singular vectors 
         svals = np.zeros(len(c0))
         svals[:len(SM)] = SM
         isv = np.where(svals < SM[0]*sv_thresh)[0]
-        VM = VM.T # now the columns of VM and the singular vectors
-        V = np.zeros((len(isv),VM.shape[1]))
+        VM = VM.T # now the columns of VM are the singular vectors
+        V = np.zeros((VM.shape[0],len(isv)))
         for k in range(len(isv)):
-            V[k,:] = VM[isv[k],:]
-        N = self.Shy@V.T        
-        return (N,V)
+            V[:,k] = VM[:,isv[k]]
+        return V
     
     
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
