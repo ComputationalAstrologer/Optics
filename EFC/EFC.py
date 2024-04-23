@@ -104,12 +104,13 @@ class EFC():
 
     #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmatrix()  )
     #c0 - reference DM command, probably corresponding to a dark hole
-    #pixlist - list of pixels that define the M matrix
+    #pixlist - list of pixels that define the M matrix, if None then self.HolePixels is used
     #sv_thresh the singular value ration used to define the effective null space of M
     #   the 10^-3 value is chosen by comparing the SVs of self.Shx to the norms of
     #   vectors obtained by self.Shy@VM[k,:] and examining the slopes of the two curves.
     #   If you do this you will see that the cross norms decay more slowly at first
-    def GetNull(self, c0, pixlist, sv_thresh=1.e-3):
+    def GetNull(self, c0, pixlist=None, sv_thresh=1.e-3):
+        if pixlist is None: pixlist = self.HolePixels
         M = self.MakeMmat(c0, pixlist)
         UM, SM, VM = np.linalg.svd(M)  # the ROWS of VM, e.g., VM[0,:] are the singular vectors 
         svals = np.zeros(len(c0))
@@ -121,6 +122,20 @@ class EFC():
             V[:,k] = VM[:,isv[k]]
         return V
     
+    #
+    def CostCrossRatio(self, a, target, c0, Vn, return_grad=False):
+        if not return_grad:
+           cc = self.CostCrossField(a, target, c0, Vn, return_grad=False)
+           cd = self. CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.e2)
+           cr = cc/cd
+           return cr
+        else:
+           cc, dcc = self.CostCrossField(a, target, c0, Vn, return_grad=True)
+           cd, dcd = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.e2)
+           cr = cc/cd
+           dcr = dcc/cd - (cc/cd**2)*(dcd@Vn)
+           
+    
     #This calculates Ey on self.HolePixels when the DM command is defined in
     #  terms of basis vectors
     #This does not include the speckle field.  In terms of the simulation, it is the model field
@@ -128,12 +143,13 @@ class EFC():
     #  dominant field
     #a  - vector of null space coefficients. must have len(a) == Vn.shape[1]
     #c0 - initial (dark hole) DM command
-    #Vn - the columns of Vn form the new basis.  See self.MakeMmat
+    #Vn - the columns of Vn form the new basis.  See self.GetNull
     #return_grad - if True it returns the derivatives with respect to the coefficient vector a
     def CrossFieldNewBasis(self, a, c0, Vn, return_grad=True):
         assert len(a) == Vn.shape[1]
         Vna = Vn@a  # phasor = np.exp(1j*Vn@a)
         S = self.Shy*np.exp(1j*c0)  # equiv to self.Shy@np.diag(np.exp(1j*c0))
+        #ey = S@np.exp(1j*Vna); ey_re = np.real(ey); ey_im = np.imag(ey)  # the code below is slightly faster
         ey_re = np.real(S)@np.cos(Vna) - np.imag(S)@np.sin(Vna)  # real part of field
         ey_im = np.real(S)@np.sin(Vna) + np.imag(S)@np.cos(Vna)  # imag part of field
         if not return_grad:
@@ -145,6 +161,30 @@ class EFC():
             di =   np.real(S)@Vnc - np.imag(S)@Vns
             return (ey_re, ey_im, dr, di)
         
+    def CostCrossIntensityRatio(self, a, target, c0, Vn, return_grad=False):
+        scale = 1.   # playing with this can help optimization sometimes
+        assert target in ['Re','Im']
+        if not return_grad:
+            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
+        else:
+            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
+            cIx, dcIx = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.0)
+            dcIx = Vn.T@dcIx
+        if target == 'Re':
+            num = np.sum(re*re)
+        else:
+            num = np.sum(im*im)
+        cost = - num/cIx  # we want to maximize this ratio
+        if not return_grad: return cost*scale
+        if target == 'Re':   
+            dnum = 2*dre.T@re
+        elif target == 'Im':
+            dnum = 2*dim.T@im
+        dcost = - dnum/cIx + (num/cIx**2)*dcIx
+        return cost*scale, dcost*scale
+
+
     #This is a cost function for minimizing the target (see below) corresponding
     #  to real or imag component of the cross field
     #a - coefficient vector of the null space basis, Vn
@@ -153,6 +193,7 @@ class EFC():
     #Vn - matrix with null space vectors, see self.GetNull() 
     #return_grad (with respect to a)
     def CostCrossField(self, a, target, c0, Vn, return_grad=False):
+        scale = 1.e7  # this helps some of the optimizers
         assert target in ['Re','-Re','Im','-Im']
         if not return_grad:
             re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
@@ -164,7 +205,7 @@ class EFC():
                 cost = im.sum()
             else:  # '-Im'
                 cost = -1.*im.sum()
-            return cost
+            return cost*scale
         else:
             re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True)
             if target == 'Re':
@@ -179,11 +220,23 @@ class EFC():
             else:  # '-Im'
                 cost = -1.*im.sum()
                 dcost = -1.*dim.sum(axis=0)
-            return cost, dcost
+            return cost*scale, dcost*scale
     
-    #This sets up optimizations for minimizing the signed cross fields
-    def OptCrossField(self, a, target, method='NCG',maxiter=20):
-        return None
+    #This sets up optimizations for minimizing the fuction self.CostCrossField
+    #c0 - see self.CrossField
+    #a0 - initial guess to start the optimizer
+    #target - see self.CostCrossField
+    #method - choices are 'CG', 'NCG'
+    def OptCrossField(self, c0, a0=None, target='-Re', method='CG', maxiter=20):
+        cfcn = self.CostCrossIntensityRatio
+        Vn = self.GetNull(c0, pixlist=None, sv_thresh = 1.e-3)
+        if a0 is None: a0 = np.zeros(Vn.shape[1])
+        args = (target, c0, Vn, True)
+        options = {'disp': True, 'maxiter': maxiter}
+        init_cost = cfcn(a0,args[0],args[1],args[2],False)
+        print('Starting Cost', init_cost)
+        out = optimize.minimize(cfcn, a0, args=args, method=method, jac=True, options=options)
+        return out
     
     
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
