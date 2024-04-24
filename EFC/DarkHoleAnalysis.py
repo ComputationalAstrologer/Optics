@@ -22,6 +22,29 @@ stuff = pickle.load(open('minus10HoleWithSpeckles33x33.pickle','rb'))
 Z = stuff['EFC class'];
 Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
 A = EFC(MakePixList([152,167,152,167], (256,256)), Z.SpeckleFactor)
+#make sure you are in Optics/EFC
+Vn = A.GetNull(Cdh, pixlist=None, sv_thresh=1.e-3)  # get null space
+abest_im = np.load("abest_im.npy"); abest_re = np.load("abest_re.npy");  #modulation commands
+assert (Vn.shape[1] == len(abest_im)) and (Vn.shape[1] == len(abest_re))
+abEx0 = np.abs(A.Shx@np.exp(1j* Cdh               ) + A.sphx*A.SpeckleFactor)
+abEx1 = np.abs(A.Shx@np.exp(1j*(Cdh + Vn@abest_re)) + A.sphx*A.SpeckleFactor)
+abEx2 = np.abs(A.Shx@np.exp(1j*(Cdh + Vn@abest_im)) + A.sphx*A.SpeckleFactor)
+Ey0 = A.Shy@np.exp(1j* Cdh               ); 
+Ey1 = A.Shy@np.exp(1j*(Cdh + Vn@abest_re)); 
+Ey2 = A.Shy@np.exp(1j*(Cdh + Vn@abest_im)); 
+Ey0_re = np.real(Ey0); Ey0_im = np.imag(Ey0)
+Ey1_re = np.real(Ey1); Ey1_im = np.imag(Ey1)
+Ey2_re = np.real(Ey2); Ey2_im = np.imag(Ey2)
+
+fig(); plt.plot(abEx0,'ko',abEx1,'ro',abEx2,'co'); 
+plt.title('|Ex| for nominal and probed states');
+fig(); plt.plot(Ey0_re,'ko',Ey0_im,'k*',Ey1_re,'ro',Ey1_im,'rx',Ey2_re,'co',Ey2_im,'cx');
+plt.title("|Re(Ey)| and |Im(Ey)| in nominal and probed states");
+
+
+
+
+
 
 Ey_nom = A.Shy@np.exp(1j*Cdh)  # nominal cross field
 mdEy_nom = np.median(np.abs(Ey_nom))
@@ -29,10 +52,14 @@ target = np.zeros((2*len(Ey_nom),2))
 target[ len(Ey_nom):,0] = mdEy_nom*np.ones((len(Ey_nom),)) - np.real(A.Shy)@Cdh
 target[-len(Ey_nom):,1] = mdEy_nom*np.ones((len(Ey_nom),)) - np.imag(A.Shy)@Cdh
 
+
+
 V = A.GetNull(Cdh, A.HolePixels)  # the cols of V are the basis vectors
 pSV = np.linalg.pinv(np.concatenate((np.real(A.Shy@V),np.imag(A.Shy@V)),axis=0))
 cv = pSV@target  # null space coefficient vectors corresponding to target fields
 Cd = V@cv  # DM command vectors corresponding to targets
+
+
 
 Ixnom = A.PolIntensity(Cdh,          'X','Hole','phase',False,None)
 Ix0 = A.PolIntensity(Cdh + Cd[:,0]/10,'X','Hole','phase',False,None)
