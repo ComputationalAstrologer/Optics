@@ -161,6 +161,34 @@ class EFC():
             di =   np.real(S)@Vnc - np.imag(S)@Vns
             return (ey_re, ey_im, dr, di)
         
+    def CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False):
+        scale = 1.   # playing with this can help optimization sometimes
+        assert target in ['Re','Im']
+        if not return_grad:
+            re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)
+            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
+        else:
+            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
+            cIx, dcIx = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.0)
+            dcIx = Vn.T@dcIx
+        if target == 'Re':
+            num = np.sum((re-re0)**2)
+            assert False
+        else:
+            num = np.sum(im*im)
+        cost = - num/cIx  # we want to maximize this ratio
+        if not return_grad: return cost*scale
+        if target == 'Re':   
+            dnum = 2*dre.T@re
+        elif target == 'Im':
+            dnum = 2*dim.T@im
+        dcost = - dnum/cIx + (num/cIx**2)*dcIx
+        return cost*scale, dcost*scale
+
+
+
+
     def CostCrossIntensityRatio(self, a, target, c0, Vn, return_grad=False):
         scale = 1.   # playing with this can help optimization sometimes
         assert target in ['Re','Im']
