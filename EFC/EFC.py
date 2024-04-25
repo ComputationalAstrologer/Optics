@@ -87,19 +87,24 @@ class EFC():
     #This makes the 'M matrix', which is linearized constraints to keep the dominant field dark
     #  while probing the cross field.
     #c0 - the linearization point 
+    #XorY - 'X' or 'Y'
     #pixlist - the list of 1D pixel indices within the dark hole that are
     #  to be kept dark while the cross field is probed.
     #With U,S,V = np.linalg.svd(M)  the last rows of V, e.g., V[k,:], are basis vectors corresponding to the small SVs of M
-    def MakeMmat(self, c0, pixlist=None):
+    def MakeMmat(self, c0, XorY='X', pixlist=None):
         if pixlist is None: pixlist = self.HolePixels
+        assert XorY in ['X', 'Y']
         lpl = len(pixlist); 
         spl = pixlist
-        Sx = self.Sx
+        if XorY == 'X': 
+            S = self.Sx
+        else: 
+            S = self.Sy
         cc0 = np.cos(c0); sc0 = np.sin(c0)
         M = np.zeros((2*lpl, self.Sx.shape[1]))
         for k in range(lpl):
-            M[k      ] = np.real(Sx[spl[k],:])*cc0 - np.imag(Sx[spl[k],:])*sc0
-            M[k + lpl] = np.real(Sx[spl[k],:])*sc0 + np.imag(Sx[spl[k],:])*cc0
+            M[k      ] = np.real(S[spl[k],:])*cc0 - np.imag(S[spl[k],:])*sc0
+            M[k + lpl] = np.real(S[spl[k],:])*sc0 + np.imag(S[spl[k],:])*cc0
         return M
 
     #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmatrix()  )
@@ -122,20 +127,7 @@ class EFC():
             V[:,k] = VM[:,isv[k]]
         return V
     
-    #
-    def CostCrossRatio(self, a, target, c0, Vn, return_grad=False):
-        if not return_grad:
-           cc = self.CostCrossField(a, target, c0, Vn, return_grad=False)
-           cd = self. CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.e2)
-           cr = cc/cd
-           return cr
-        else:
-           cc, dcc = self.CostCrossField(a, target, c0, Vn, return_grad=True)
-           cd, dcd = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.e2)
-           cr = cc/cd
-           dcr = dcc/cd - (cc/cd**2)*(dcd@Vn)
-           
-    
+   
     #This calculates Ey on self.HolePixels when the DM command is defined in
     #  terms of basis vectors
     #This does not include the speckle field.  In terms of the simulation, it is the model field
@@ -161,29 +153,42 @@ class EFC():
             di =   np.real(S)@Vnc - np.imag(S)@Vns
             return (ey_re, ey_im, dr, di)
         
-    def CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False):
-        scale = 1.   # playing with this can help optimization sometimes
+    #Ithresh - the intensity level at which the penalty for X intensity turns on     
+    def CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False, Ithresh = 1.e-9, scale=1.):
+        def QuadThreshPenalty(s, thr, s_grad=None, return_grad=False, offset=1.e-15):  #  assumes s >=0.  offset is small intensity value
+            wh = np.where(s > thr)[0]
+            swt = s[wh] - thr
+            pen = 0.5*np.sum( swt**2 ) + offset
+            if not return_grad:
+                return  pen
+            else: 
+                assert (s_grad is not None)
+                sgw = s_grad[wh,:]
+                gpen = np.sum( sgw.T*swt, axis=1 ) 
+                return pen, gpen
         assert target in ['Re','Im']
+        re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)
         if not return_grad:
-            re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)
+            Ix = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',False,None)
             re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
-            cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
+            #cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
+            den = QuadThreshPenalty(Ix,Ithresh,None,False)         
         else:
+            Ix, gIx = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',True,None)
             re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
-            cIx, dcIx = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.0)
-            dcIx = Vn.T@dcIx
+            den, dden = QuadThreshPenalty(Ix,Ithresh,gIx,True) 
+            dden = Vn.T@dden
         if target == 'Re':
             num = np.sum((re-re0)**2)
-            assert False
         else:
-            num = np.sum(im*im)
-        cost = - num/cIx  # we want to maximize this ratio
+            num = np.sum((im-im0)**2)
+        cost = - num/den  # we want to minimize this ratio
         if not return_grad: return cost*scale
         if target == 'Re':   
-            dnum = 2*dre.T@re
+            dnum = 2*dre.T@(re - re0)
         elif target == 'Im':
-            dnum = 2*dim.T@im
-        dcost = - dnum/cIx + (num/cIx**2)*dcIx
+            dnum = 2*dim.T@(im - im0)
+        dcost = - dnum/den + (num/den**2)*dden
         return cost*scale, dcost*scale
 
 
@@ -405,6 +410,32 @@ class EFC():
     #  scrapyard for EFC class #
     #==========================#
     
+    #This cost fcn does modulate the cross field much because most of the gradient comes 
+    #  from the dominant field
+    def _CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False, scale=1.e8):
+        assert False
+        assert target in ['Re','Im']
+        re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)      
+        if not return_grad:
+            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
+        else:
+            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
+            cIx, dcIx = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.0)
+            dcIx = Vn.T@dcIx
+        if target == 'Re':
+            num = np.sum((re-re0)**2)
+        else:
+            num = np.sum((im-im0)**2)
+        cost = - num/cIx  # we want to minimize this ratio
+        if not return_grad: return cost*scale
+        if target == 'Re':   
+            dnum = 2*dre.T@(re - re0)
+        elif target == 'Im':
+            dnum = 2*dim.T@(im - im0)
+        dcost = - dnum/cIx + (num/cIx**2)*dcIx
+        return cost*scale, dcost*scale
+
     #This is a cost function for a bright hill in the cross polarization ('Y')
     #c - DM command vector
     #scale - setting this to 10^? seems to help the Newton-CG minimizer
