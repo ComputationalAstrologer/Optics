@@ -21,6 +21,85 @@ EFC = EFC.EFC  # need this to load the pickle
 stuff = pickle.load(open('minus10HoleWithSpeckles33x33.pickle','rb'))
 Z = stuff['EFC class'];
 Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
+
+#single pixel experiment
+#this creates a modulating DM command for Ey in the Null space of Shx
+singlepix = MakePixList([150,150,186,186],(256,256))
+A = EFC(singlepix, SpeckleFactor=Z.SpeckleFactor)
+Mx = A.MakeMmat(Cdh,'X',singlepix)
+My = A.MakeMmat(Cdh,'Y',singlepix)
+Ux, sx, Vx = np.linalg.svd(Mx);  Uy, sy, Vy = np.linalg.svd(My); Vx = Vx.T; Vy = Vy.T
+t0 = Vy[:,0]; t1 = Vy[:,1];
+a0 = np.linalg.pinv(Vx[:,2:])@t0; ht0 = Vx[:,2:]@a0; cmd0 = Vx[:,2:]@a0
+a1 = np.linalg.pinv(Vx[:,2:])@t1; ht1 = Vx[:,2:]@a1; cmd1 = Vx[:,2:]@a1 
+fig(); plt.plot(t1,'ko',ht1,'rx');plt.title('Match to 1st singular vector from Vx Null');
+fig(); plt.plot(t0,'ko',ht0,'rx');plt.title('Match to 0th singular vector from Vx Null');
+fig(); plt.plot(cmd0,'ko');plt.title('DM phase for 0th SV match');
+fig(); plt.plot(cmd1,'ko');plt.title('DM phase for 1st SV match');
+
+ey0 = lambda alpha : (A.Shy*np.exp(1j*Cdh))@np.exp(1j*alpha*cmd0)
+ey1 = lambda alpha : (A.Shy*np.exp(1j*Cdh))@np.exp(1j*alpha*cmd1)
+ey00 = ey0(0.)
+ey10 = ey1(0.)
+ey0 = lambda alpha : (A.Shy*np.exp(1j*Cdh))@np.exp(1j*alpha*cmd0) - ey00
+ey1 = lambda alpha : (A.Shy*np.exp(1j*Cdh))@np.exp(1j*alpha*cmd1) - ey10
+
+
+
+alpha = np.linspace(-5,5,151)
+abex = np.zeros((len(alpha),2))
+eyre = np.zeros((len(alpha),2))
+eyim = np.zeros((len(alpha),2))
+if len(A.HolePixels) > 1 : assert False  # this assumes a single pixel in the DH
+for k in range(len(alpha)):
+    abex[k,0] = np.sqrt(A.PolIntensity(alpha[k]*cmd0 + Cdh,'X','Hole','phase',False,None))
+    abex[k,1] = np.sqrt(A.PolIntensity(alpha[k]*cmd1 + Cdh,'X','Hole','phase',False,None))
+    eyre[k,0] = np.real(ey0(alpha[k]))
+    eyre[k,1] = np.real(ey1(alpha[k]))
+    eyim[k,0] = np.imag(ey0(alpha[k]))
+    eyim[k,1] = np.imag(ey1(alpha[k]))
+
+fig();
+pl0 = plt.plot(alpha,abex[:,0],'ko-' ,label=r'$\sqrt{I_x}$')
+pl1 = plt.plot(alpha,eyre[:,0],'rx:' ,label='Re(Ey)')
+pl2 = plt.plot(alpha,eyim[:,0],'c^-.',label='Im(Ey)');
+plt.ylabel(r'field $\sqrt{\mathrm{contrast}}$')
+plt.xlabel('DM command scaling factor')
+plt.title('Single Pixel Constrained Probe Command')
+plt.legend();
+
+fig();
+pl0 = plt.plot(alpha,abex[:,1],'ko-' ,label=r'$\sqrt{I_x}$')
+pl1 = plt.plot(alpha,eyre[:,1],'rx:' ,label='Re(Ey)')
+pl2 = plt.plot(alpha,eyim[:,1],'c^-.',label='Im(Ey)');
+plt.ylabel(r'field $\sqrt{\mathrm{contrast}}$')
+plt.xlabel('DM command scaling factor')
+plt.title('Single Pixel Constrained Probe Command')
+plt.legend();
+
+
+#### horizontal lines work, but vertical ones do not!?!
+
+somepix = MakePixList([180,183,175,175],(256,256))
+A = EFC(somepix, SpeckleFactor=Z.SpeckleFactor)
+Mx = A.MakeMmat(Cdh,'X',somepix)
+My = A.MakeMmat(Cdh,'Y',somepix)
+Ux, sx, Vx = np.linalg.svd(Mx);  Uy, sy, Vy = np.linalg.svd(My); Vx = Vx.T; Vy = Vy.T
+t0 = Vy[:,0]; t1 = Vy[:,1];
+a0 = np.linalg.pinv(Vx[:,len(sx):])@t0; ht0 = Vx[:,len(sx):]@a0; cmd0 = Vx[:,len(sx):]@a0
+a1 = np.linalg.pinv(Vx[:,len(sx):])@t1; ht1 = Vx[:,len(sx):]@a1; cmd1 = Vx[:,len(sx):]@a1 
+fig(); plt.plot(t1,'ko',ht1,'rx');plt.title('Match to 1st singular vector from Vx Null');
+fig(); plt.plot(t0,'ko',ht0,'rx');plt.title('Match to 0th singular vector from Vx Null');
+fig(); plt.plot(cmd0,'ko');plt.title('DM phase for 0th SV match');
+fig(); plt.plot(cmd1,'ko');plt.title('DM phase for 1st SV match');
+
+
+
+
+
+              
+               
+               
 A = EFC(MakePixList([152,167,152,167], (256,256)), Z.SpeckleFactor)
 #make sure you are in Optics/EFC
 Vn = A.GetNull(Cdh, pixlist=None, sv_thresh=1.e-3)  # get null space
