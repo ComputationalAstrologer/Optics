@@ -78,9 +78,17 @@ plt.title('Single Pixel Constrained Probe Command')
 plt.legend();
 
 
-#### horizontal lines work, but vertical ones do not!?!
+#not sure when it works and when it does not.
 
-somepix = MakePixList([180,183,175,175],(256,256))
+ff = lambda xy : np.ravel_multi_index((xy[1],xy[0]), (256,256))
+
+#somepix=[];  # the 2x2 + 1 combo seems to work.
+somepix = MakePixList([170,171,180,181] ,(256,256))
+somepix.append(38039)  # this corresponds to (151,148).  the match to the singular vector fails without this additional member!  
+
+#for k in range(len(pl)): somepix.append(ff(pl[k]))
+
+
 A = EFC(somepix, SpeckleFactor=Z.SpeckleFactor)
 Mx = A.MakeMmat(Cdh,'X',somepix)
 My = A.MakeMmat(Cdh,'Y',somepix)
