@@ -82,12 +82,16 @@ plt.legend();
 
 ff = lambda xy : np.ravel_multi_index((xy[1],xy[0]), (256,256))
 
-#somepix=[];  # the 2x2 + 1 combo seems to work.
-somepix = MakePixList([170,171,180,181] ,(256,256))
-somepix.append(38039)  # this corresponds to (151,148).  the match to the singular vector fails without this additional member!  
 
+#pl = [ (180,160), (181,161) ]  #(181,160) ,  (181,160),
+#somepix = []
 #for k in range(len(pl)): somepix.append(ff(pl[k]))
 
+somepix = MakePixList( [180,182,160,162] , (256,256)); 
+pl =[(180,160),(182,162),(180,162),(182,160) ]
+for k in range(len(pl)): somepix.remove(ff(pl[k]))
+
+somepix = [ff((181,156)), ff((181,161))]
 
 A = EFC(somepix, SpeckleFactor=Z.SpeckleFactor)
 Mx = A.MakeMmat(Cdh,'X',somepix)
