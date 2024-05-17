@@ -84,8 +84,8 @@ class EFC():
         else: pass
         return(None)
     
-    #This makes the 'M matrix', which is linearized constraints to keep the dominant field dark
-    #  while probing the cross field.
+    #This makes the 'M matrix', which is the linearized system matrix (in terms of the DM phase),
+    #  but broken into real and imag parts.
     #c0 - the linearization point 
     #XorY - 'X' or 'Y'
     #pixlist - the list of 1D pixel indices within the dark hole that are
