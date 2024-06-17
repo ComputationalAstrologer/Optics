@@ -107,7 +107,7 @@ class EFC():
             M[k + lpl] = np.real(S[spl[k],:])*sc0 + np.imag(S[spl[k],:])*cc0
         return M
 
-    #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmatrix()  )
+    #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmat()  )
     #c0 - reference DM command, probably corresponding to a dark hole
     #pixlist - list of pixels that define the M matrix, if None then self.HolePixels is used
     #sv_thresh the singular value ration used to define the effective null space of M
@@ -134,12 +134,20 @@ class EFC():
     #The idea is that the basis vectors in a useful effective null space for
     #  dominant field
     #a  - vector of null space coefficients. must have len(a) == Vn.shape[1]
+    #   - if Vn=None is it simply a command vector in the original command space
     #c0 - initial (dark hole) DM command
     #Vn - the columns of Vn form the new basis.  See self.GetNull
+    #     if None, no new basis is used.
     #return_grad - if True it returns the derivatives with respect to the coefficient vector a
-    def CrossFieldNewBasis(self, a, c0, Vn, return_grad=True):
-        assert len(a) == Vn.shape[1]
-        Vna = Vn@a  # phasor = np.exp(1j*Vn@a)
+    def CrossFieldNewBasis(self, a, c0, Vn=None, return_grad=True):
+        if Vn is not None:
+            assert len(a) == Vn.shape[1]
+            Vna = Vn@a  # phasor = np.exp(1j*Vn@a)
+        else:
+            assert len(a) == self.Sx.shape[1]
+            Vna = a
+            Vn = np.eye(len(a))
+        
         S = self.Shy*np.exp(1j*c0)  # equiv to self.Shy@np.diag(np.exp(1j*c0))
         #ey = S@np.exp(1j*Vna); ey_re = np.real(ey); ey_im = np.imag(ey)  # the code below is slightly faster
         ey_re = np.real(S)@np.cos(Vna) - np.imag(S)@np.sin(Vna)  # real part of field
@@ -220,16 +228,21 @@ class EFC():
 
     #This is a cost function for minimizing the target (see below) corresponding
     #  to real or imag component of the cross field
-    #a - coefficient vector of the null space basis, Vn
+    #a - command for departure from c0
     #target - quantity to be minimized.  options are 'Re', '-Re', 'Im', '-Im'
     #c0 - dark hole command for the dominant field
-    #Vn - matrix with null space vectors, see self.GetNull() 
+    ###Vn - (turned off) matrix with null space vectors, see self.GetNull() 
+    #   - if None, no new basis is used.
     #return_grad (with respect to a)
-    def CostCrossField(self, a, target, c0, Vn, return_grad=False):
+    def CostCrossField(self, a, target, c0, return_grad=False): #Vn=None):
         scale = 1.e7  # this helps some of the optimizers
         assert target in ['Re','-Re','Im','-Im']
         if not return_grad:
-            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            #re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            f = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
+                                    return_grad=False,SpeckleFactor=0.)
+            im = np.imag(f)
+            re = np.real(f)
             if target == 'Re':
                 cost = re.sum()
             elif target == '-Re':
@@ -240,35 +253,58 @@ class EFC():
                 cost = -1.*im.sum()
             return cost*scale
         else:
-            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True)
-            if target == 'Re':
+           #re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True)
+           f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
+                                    return_grad=True,SpeckleFactor=0.)
+           re = np.real(f);  dre = np.real(df)
+           im = np.imag(f);  dim = np.imag(df)
+           if target == 'Re':
                 cost = re.sum()
                 dcost = dre.sum(axis=0)
-            elif target == '-Re':
+           elif target == '-Re':
                 cost = -1.*re.sum()
                 dcost = -1*dre.sum(axis=0)
-            elif target == 'Im':
+           elif target == 'Im':
                 cost = im.sum()
                 dcost = dim.sum(axis=0)
-            else:  # '-Im'
+           else:  # '-Im'
                 cost = -1.*im.sum()
                 dcost = -1.*dim.sum(axis=0)
-            return cost*scale, dcost*scale
+           return cost*scale, dcost*scale
     
     #This sets up optimizations for minimizing the fuction self.CostCrossField
-    #c0 - see self.CrossField
+    #c0 - see initial dark hole comment
     #a0 - initial guess to start the optimizer
     #target - see self.CostCrossField
     #method - choices are 'CG', 'NCG'
-    def OptCrossField(self, c0, a0=None, target='-Re', method='CG', maxiter=20):
-        cfcn = self.CostCrossIntensityRatio
-        Vn = self.GetNull(c0, pixlist=None, sv_thresh = 1.e-3)
-        if a0 is None: a0 = np.zeros(Vn.shape[1])
-        args = (target, c0, Vn, True)
+    def OptCrossField(self, c0, a0=None, f_bound=2.e-4, dm_bound=0.2, target='-Re', maxiter=20):
         options = {'disp': True, 'maxiter': maxiter}
-        init_cost = cfcn(a0,args[0],args[1],args[2],False)
-        print('Starting Cost', init_cost)
-        out = optimize.minimize(cfcn, a0, args=args, method=method, jac=True, options=options)
+        
+        #M = self.MakeMmat(c0,XorY='X',pixlist=None)
+        #fb = f_bound*np.ones((M.shape[0],))
+        #db = dm_bound*np.ones(c0.shape)
+        #ub = np.concatenate( (fb, db), axis=0)
+        #C =  np.concatenate( (M, np.eye(len(c0))), axis=0)
+        #con = optimize.LinearConstraint(C, lb=-ub,ub=ub)
+        
+        ub = f_bound*np.ones(2*len(self.HolePixels))
+        def gradReImField(c):
+          s,ds = self.Field(c0+c,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
+          #ss = np.concatenate( (np.real(s),np.imag(s)), axis=0)
+          dsds = np.concatenate( (np.real(ds),np.imag(ds)), axis=0) 
+          return dsds
+        def ReImField(c):
+          s    = self.Field(c0+c,'X','Hole','phase',return_grad=False,SpeckleFactor=None)
+          ss   = np.concatenate((np.real(s),np.imag(s)), axis=0)
+          return ss
+            
+        con = optimize.NonlinearConstraint(ReImField,ub,-ub,jac=gradReImField)
+        
+        cfcn = lambda a: self.CostCrossField(a, target, c0, return_grad=True)  # set costfunction
+        init_cost = cfcn(a0)
+        print('Starting Cost', init_cost[0])
+        out = optimize.minimize(cfcn, a0, args=(), options=options, method='SLSQP',
+                                jac=True, constraints=(con,))
         return out
     
     
@@ -281,8 +317,20 @@ class EFC():
     #        - 'phase' : coef must be real-valued and the phasor phase is coef itself
     #return_grad - return the gradient.  
     #SpeckleFactor - multiplier for additive speckle field.  Can be 0.  None corresponds to defaul (see __init__)
-    def PolIntensity(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, 
-                     SpeckleFactor=None):
+    def PolIntensity(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, SpeckleFactor=None):
+        if not return_grad:
+            f =       self.Field(coef, XorY=XorY, region=region, DM_mode=DM_mode, 
+                      return_grad=False, SpeckleFactor=SpeckleFactor)
+        else:
+            (f, df) = self.Field(coef, XorY=XorY, region=region, DM_mode=DM_mode, 
+                      return_grad=True,  SpeckleFactor=SpeckleFactor)            
+        I = np.real(f*np.conj(f))
+        if not return_grad:
+            return I
+        dI = 2*np.real(np.conj(f)*df.T).T
+        return (I, dI)
+    #See self.PolIntensity for notes
+    def Field(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, SpeckleFactor=None):
         assert region == 'Hole' or region == 'Full'
         assert DM_mode in ['height', 'phase']
         nc = self.ndm**2
@@ -303,7 +351,6 @@ class EFC():
             else:  #'Full'
                 Sys = self.Sy
                 sp  = self.spy
-
         if DM_mode == 'height':
             assert np.iscomplexobj(coef) == False
             c = np.exp(1j*4.*np.pi*coef/self.lamb)
@@ -316,15 +363,13 @@ class EFC():
                 dc = 1j*c
         else:  # not an option   
             assert False
-            
         f = Sys.dot(c)
         f += SpeckleFactor*sp
-        I = np.real(f*np.conj(f))
         if not return_grad:
-            return I
-        df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.
-        dI = 2*np.real(np.conj(f)*df.T).T
-        return (I, dI)
+            return f
+        df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.    
+        return (f, df)
+        
     
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector

@@ -22,6 +22,29 @@ stuff = pickle.load(open('minus10HoleWithSpeckles33x33.pickle','rb'))
 Z = stuff['EFC class'];
 Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
 
+######################################################################
+# continuous region probe experiment (assuming 10^-5 linear polarizer)
+######################################################################
+
+extfac = np.sqrt(1.e-5) # linear polarizer (amplitude) extinction factor
+lgabsr = lambda a: np.log10(np.abs(np.real(a)))
+lgabsi = lambda a: np.log10(np.abs(np.imag(a)))
+
+IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None)
+IZ0fx = IZ0fx.reshape((256,256))
+plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
+
+pli = MakePixList([160,169,160,169], (256,256))
+A = EFC(HolePixels=pli, SpeckleFactor=Z.SpeckleFactor)
+fA0hx = A.Field(Cdh,'X','Hole','phase',return_grad=False,SpeckleFactor=None)*extfac
+fA0hy = A.Field(Cdh,'Y','Hole','phase',return_grad=False,SpeckleFactor=None)
+  
+plt.figure(); plt.plot(lgabsr(fA0hx),'ro',lgabsr(fA0hy),'rx',lgabsi(fA0hx),'co',lgabsi(fA0hy),'cx')
+
+
+
+
+
 #single pixel experiment
 #this creates a modulating DM command for Ey in the Null space of Shx
 singlepix = MakePixList([150,150,186,186],(256,256))
