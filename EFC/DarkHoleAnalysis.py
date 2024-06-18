@@ -34,7 +34,7 @@ IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=Fa
 IZ0fx = IZ0fx.reshape((256,256))
 plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
 
-pli = MakePixList([160,169,160,169], (256,256))
+pli = MakePixList([160,164,160,164], (256,256))
 A = EFC(HolePixels=pli, SpeckleFactor=Z.SpeckleFactor)
 fA0hx = A.Field(Cdh,'X','Hole','phase',return_grad=False,SpeckleFactor=None)*extfac
 fA0hy = A.Field(Cdh,'Y','Hole','phase',return_grad=False,SpeckleFactor=None)
