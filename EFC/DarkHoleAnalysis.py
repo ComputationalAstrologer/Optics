@@ -51,6 +51,34 @@ fy = A.Field(Cdh+out['x'], XorY='Y',region='Hole',DM_mode='phase', return_grad=F
 plt.figure(); plt.plot(extfac*sI0x,'k.',extfac*sIx,'k*');
 plt.plot(np.real(f0y),'ro',np.imag(f0y),'rx',np.real(fy),'co',np.imag(fy),'cx'); plt.title('thr=1.e-7, pScale=3.e-5, target=Re');
 
+##########################
+
+filep = open('3_lambda_D_probe.pickle','rb'); stuff = pickle.load(filep); filep.close()
+C_pre = stuff['probe_real']; C_pim = stuff['probe_imag'];
+IAhx0 = A.PolIntensity(Cdh,'X','Hole','phase',False,None)
+fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);
+IAhx_pre = A.PolIntensity(Cdh + C_pre,'X','Hole','phase',False,None)
+IAhx_pim = A.PolIntensity(Cdh + C_pim,'X','Hole','phase',False,None)
+fAhy_pre = A.Field(Cdh + C_pre,'Y','Hole','phase',False,0.);
+fAhy_pim = A.Field(Cdh + C_pim,'Y','Hole','phase',False,0.);
+
+plt.figure(); #result of modulation with 'Re' target
+plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
+plt.plot(extfac*np.sqrt(IAhx_pre),marker='s',color='tan',ls='None');
+plt.plot(np.abs(np.real(fAhy_pre) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
+plt.plot(np.abs(np.imag(fAhy_pre) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
+#plt.plot(np.real(fAhy_pre),marker='d',color='red',ls='None');
+#plt.plot(np.imag(fAhy_pre),marker='p',color='blue',ls='None');
+
+
+plt.figure();  # result of modulation with 'Im' target
+plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
+plt.plot(extfac*np.sqrt(IAhx_pim),marker='s',color='tan',ls='None');
+plt.plot(np.abs(np.real(fAhy_pim) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
+plt.plot(np.abs(np.imag(fAhy_pim) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
+
+
+
 
 #single pixel experiment
 #this creates a modulating DM command for Ey in the Null space of Shx
