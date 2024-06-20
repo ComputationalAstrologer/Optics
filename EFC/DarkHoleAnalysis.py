@@ -12,6 +12,7 @@ It's kind of a grabbag of random crap
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
+from scipy import optimize
 import EFC
 fig = plt.figure
 MakePixList = EFC.MakePixList
@@ -41,8 +42,14 @@ fA0hy = A.Field(Cdh,'Y','Hole','phase',return_grad=False,SpeckleFactor=None)
   
 plt.figure(); plt.plot(lgabsr(fA0hx),'ro',lgabsr(fA0hy),'rx',lgabsi(fA0hx),'co',lgabsi(fA0hy),'cx')
 
-
-
+sI0x = np.sqrt(A.PolIntensity(Cdh ,'X','Hole','phase',False,None) )
+f0y = A.Field(Cdh, XorY='Y',region='Hole',DM_mode='phase', return_grad=False,SpeckleFactor=0.)
+cfcn = lambda a: A.CostCrossFieldWithDomPenalty(a, 'Re', Cdh, intthr=1.e-7, pScale=3.e-5, crfield0=f0y, return_grad=False)
+out = optimize.minimize(cfcn, 0*Cdh, options={'disp':True,'maxiter':180}, method='Powell',jac=False)
+sIx = np.sqrt(A.PolIntensity(Cdh +out['x'],'X','Hole','phase',False,None) )
+fy = A.Field(Cdh+out['x'], XorY='Y',region='Hole',DM_mode='phase', return_grad=False,SpeckleFactor=0.)
+plt.figure(); plt.plot(extfac*sI0x,'k.',extfac*sIx,'k*');
+plt.plot(np.real(f0y),'ro',np.imag(f0y),'rx',np.real(fy),'co',np.imag(fy),'cx'); plt.title('thr=1.e-7, pScale=3.e-5, target=Re');
 
 
 #single pixel experiment
