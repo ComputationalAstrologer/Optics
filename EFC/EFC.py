@@ -83,248 +83,7 @@ class EFC():
                 self.sphy[k]  = self.spy[HolePixels[k]]
         else: pass
         return(None)
-    
-    #This makes the 'M matrix', which is the linearized system matrix (in terms of the DM phase),
-    #  but broken into real and imag parts.
-    #c0 - the linearization point 
-    #XorY - 'X' or 'Y'
-    #pixlist - the list of 1D pixel indices within the dark hole that are
-    #  to be kept dark while the cross field is probed.
-    #With U,S,V = np.linalg.svd(M)  the last rows of V, e.g., V[k,:], are basis vectors corresponding to the small SVs of M
-    def MakeMmat(self, c0, XorY='X', pixlist=None):
-        if pixlist is None: pixlist = self.HolePixels
-        assert XorY in ['X', 'Y']
-        lpl = len(pixlist); 
-        spl = pixlist
-        if XorY == 'X': 
-            S = self.Sx
-        else: 
-            S = self.Sy
-        cc0 = np.cos(c0); sc0 = np.sin(c0)
-        M = np.zeros((2*lpl, self.Sx.shape[1]))
-        for k in range(lpl):
-            M[k      ] = np.real(S[spl[k],:])*cc0 - np.imag(S[spl[k],:])*sc0
-            M[k + lpl] = np.real(S[spl[k],:])*sc0 + np.imag(S[spl[k],:])*cc0
-        return M
 
-    #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmat()  )
-    #c0 - reference DM command, probably corresponding to a dark hole
-    #pixlist - list of pixels that define the M matrix, if None then self.HolePixels is used
-    #sv_thresh the singular value ration used to define the effective null space of M
-    #   the 10^-3 value is chosen by comparing the SVs of self.Shx to the norms of
-    #   vectors obtained by self.Shy@VM[k,:] and examining the slopes of the two curves.
-    #   If you do this you will see that the cross norms decay more slowly at first
-    def GetNull(self, c0, pixlist=None, sv_thresh=1.e-3):
-        if pixlist is None: pixlist = self.HolePixels
-        M = self.MakeMmat(c0, pixlist)
-        UM, SM, VM = np.linalg.svd(M)  # the ROWS of VM, e.g., VM[0,:] are the singular vectors 
-        svals = np.zeros(len(c0))
-        svals[:len(SM)] = SM
-        isv = np.where(svals < SM[0]*sv_thresh)[0]
-        VM = VM.T # now the columns of VM are the singular vectors
-        V = np.zeros((VM.shape[0],len(isv)))
-        for k in range(len(isv)):
-            V[:,k] = VM[:,isv[k]]
-        return V
-    
-   
-    #This calculates Ey on self.HolePixels when the DM command is defined in
-    #  terms of basis vectors
-    #This does not include the speckle field.  In terms of the simulation, it is the model field
-    #The idea is that the basis vectors in a useful effective null space for
-    #  dominant field
-    #a  - vector of null space coefficients. must have len(a) == Vn.shape[1]
-    #   - if Vn=None is it simply a command vector in the original command space
-    #c0 - initial (dark hole) DM command
-    #Vn - the columns of Vn form the new basis.  See self.GetNull
-    #     if None, no new basis is used.
-    #return_grad - if True it returns the derivatives with respect to the coefficient vector a
-    def CrossFieldNewBasis(self, a, c0, Vn=None, return_grad=True):
-        if Vn is not None:
-            assert len(a) == Vn.shape[1]
-            Vna = Vn@a  # phasor = np.exp(1j*Vn@a)
-        else:
-            assert len(a) == self.Sx.shape[1]
-            Vna = a
-            Vn = np.eye(len(a))
-        
-        S = self.Shy*np.exp(1j*c0)  # equiv to self.Shy@np.diag(np.exp(1j*c0))
-        #ey = S@np.exp(1j*Vna); ey_re = np.real(ey); ey_im = np.imag(ey)  # the code below is slightly faster
-        ey_re = np.real(S)@np.cos(Vna) - np.imag(S)@np.sin(Vna)  # real part of field
-        ey_im = np.real(S)@np.sin(Vna) + np.imag(S)@np.cos(Vna)  # imag part of field
-        if not return_grad:
-            return (ey_re, ey_im)
-        else:
-            Vnc = (Vn.T*np.cos(Vna)).T
-            Vns = (Vn.T*np.sin(Vna)).T
-            dr = - np.real(S)@Vns - np.imag(S)@Vnc
-            di =   np.real(S)@Vnc - np.imag(S)@Vns
-            return (ey_re, ey_im, dr, di)
-        
-    #Ithresh - the intensity level at which the penalty for X intensity turns on     
-    def CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False, Ithresh = 1.e-9, scale=1.):
-        def QuadThreshPenalty(s, thr, s_grad=None, return_grad=False, offset=1.e-15):  #  assumes s >=0.  offset is small intensity value
-            wh = np.where(s > thr)[0]
-            swt = s[wh] - thr
-            pen = 0.5*np.sum( swt**2 ) + offset
-            if not return_grad:
-                return  pen
-            else: 
-                assert (s_grad is not None)
-                sgw = s_grad[wh,:]
-                gpen = np.sum( sgw.T*swt, axis=1 ) 
-                return pen, gpen
-        assert target in ['Re','Im']
-        re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)
-        if not return_grad:
-            Ix = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',False,None)
-            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
-            #cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
-            den = QuadThreshPenalty(Ix,Ithresh,None,False)         
-        else:
-            Ix, gIx = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',True,None)
-            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
-            den, dden = QuadThreshPenalty(Ix,Ithresh,gIx,True) 
-            dden = Vn.T@dden
-        if target == 'Re':
-            num = np.sum((re-re0)**2)
-        else:
-            num = np.sum((im-im0)**2)
-        cost = - num/den  # we want to minimize this ratio
-        if not return_grad: return cost*scale
-        if target == 'Re':   
-            dnum = 2*dre.T@(re - re0)
-        elif target == 'Im':
-            dnum = 2*dim.T@(im - im0)
-        dcost = - dnum/den + (num/den**2)*dden
-        return cost*scale, dcost*scale
-
-    #This is a cost function for minimizing the target (see below) corresponding
-    #  to real or imag component of the cross field
-    #a - command for departure from c0
-    #target - quantity to be minimized.  options are 'Re', '-Re', 'Im', '-Im'
-    #c0 - dark hole command for the dominant field
-    #amthr - amplitude threshold for cost penalty of dominant polarization 
-    #      - if None, not applied
-    #return_grad (with respect to a)
-    def CostCrossFieldWithDomPenalty(self, a, target, c0, intthr=1.e-8, return_grad=False): 
-        assert False
-        scale = 1.e9  # this helps some of the optimizers
-        penaltyScale = 0.1
-        assert target in ['Re','Im']
-
-        f = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
-        re = np.real(f);  
-        im = np.imag(f);
-        if target == 'Re':
-             cost = - 0.5*np.sum(re**2)
-        else:
-             cost = - 0.5*np.sum(im**2)
-
-        if intthr is not None:  # penalty fcn is Ix - threshold  if Ix > threshold
-            q = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=False, SpeckleFactor=None)  
-            wqth = np.where(q > intthr)[0]
-            q = q[wqth] - intthr
-            cost += penaltyScale*q.sum()
-
-        if not return_grad:
-            return cost*scale
-        
-        else:  # return_grad
-           f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
-                                    return_grad=True,SpeckleFactor=0.)
-           re = np.real(f);  dre = np.real(df)
-           im = np.imag(f);  dim = np.imag(df)
-           if target == 'Re':
-                dcost = - np.sum(dre.T*re, axis=1)
-           else:
-                dcost = - np.sum(dim.T*im, axis=1)
-                
-           if ampthr is not None:
-                Ix, gIx = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
-                Ix = Ix[wqth]
-                gIx = gIx[wqth,:]
-                dcost += penaltyScale*np.sum(gIx,axis=0)
-           return cost*scale, dcost*scale
-
-    def _CostCrossFieldWithDomPenalty(self, a, target, c0, ampthr=1.e-4, return_grad=False): 
-        assert False
-        scale = 1.  # this helps some of the optimizers
-        penaltyScale = 1.
-        assert target in ['Re','-Re','Im','-Im']
-
-        cost = 0.0;
-        f = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
-        re = np.real(f);  
-        im = np.imag(f);
-        if target == 'Re':
-             cost += -re.sum()
-        elif target == '-Re':
-             cost += re.sum()
-        elif target == 'Im':
-             cost += -im.sum()
-        else:  # '-Im'
-             cost += im.sum()
-
-        if ampthr is not None:  # penalty fcn is \sqrt(Ix) - threshold  if \sqrt(Ix) > threshold
-            q = np.sqrt( self.PolIntensity(a + c0,'X','Hole','phase',return_grad=False, SpeckleFactor=None)  )
-            wqth = np.where(q > ampthr)[0]
-            q = q[wqth] - ampthr
-            cost += penaltyScale*q.sum()
-
-        if not return_grad:
-            return cost*scale
-        
-        else:  # return_grad
-           f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
-                                    return_grad=True,SpeckleFactor=0.)
-           re = np.real(f);  dre = np.real(df)
-           im = np.imag(f);  dim = np.imag(df)
-           if target == 'Re':
-                dcost = -dre.sum(axis=0)
-           elif target == '-Re':
-                dcost = dre.sum(axis=0)
-           elif target == 'Im':
-                dcost = -dim.sum(axis=0)
-           else:  # '-Im'
-                dcost = dim.sum(axis=0)
-                
-           if ampthr is not None:
-                Ix, gIx = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
-                Ix = Ix[wqth]
-                gIx = gIx[wqth,:]
-                gq = 0.5*(gIx.T*(1./np.sqrt(q))).T
-                dcost += penaltyScale*np.sum(gq,axis=0)
-           return cost*scale, dcost*scale
-    
-    #This sets up optimizations for minimizing the fuction self.CostCrossField
-    #c0 - see initial dark hole comment
-    #a0 - initial guess to start the optimizer
-    #target - see self.CostCrossField
-    #method - choices are 'CG', 'NCG'
-    def OptCrossField(self, c0, a0=None, target='Re', maxiter=20):
-        options = {'disp': True, 'maxiter': maxiter}
-        
-        if False:  #nonlinear constraint for SLSQP
-            ub = f_bound*np.ones(2*len(self.HolePixels))
-            def gradReImField(c):
-              s,ds = self.Field(c0+c,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
-              #ss = np.concatenate( (np.real(s),np.imag(s)), axis=0)
-              dsds = np.concatenate( (np.real(ds),np.imag(ds)), axis=0) 
-              return dsds
-            def ReImField(c):
-              s    = self.Field(c0+c,'X','Hole','phase',return_grad=False,SpeckleFactor=None)
-              ss   = np.concatenate((np.real(s),np.imag(s)), axis=0)
-              return ss
-            con = optimize.NonlinearConstraint(ReImField,ub,-ub,jac=gradReImField)
-        
-        cfcn = lambda a: self.CostCrossFieldWithDomPenalty(a, target, c0,ampthr=1.e-4,return_grad=True)  # set costfunction
-        init_cost = cfcn(a0)
-        print('Starting Cost', init_cost[0])
-        out = optimize.minimize(cfcn, a0, options=options, method='CG',jac=True)
-        return out
-    
-    
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
     #The spline coefficient vector must have a shape (self.ndm**2,)
     #XorY - select the desired polarization 'X' or 'Y'
@@ -386,7 +145,89 @@ class EFC():
             return f
         df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.    
         return (f, df)
+    
+    #This is a cost function for minimizing the target (see below) corresponding
+    #  to real or imag component of the cross field
+    #a - command for departure from c0
+    #target - quantity to be minimized.  options are 'Re', 'Im' #'-Re', '-Im'
+    #c0 - dark hole command for the dominant field
+    #intthr - intensity threshold for cost penalty of dominant polarization 
+    #      - if None, not applied
+    #return_grad (with respect to a)
+    def CostCrossFieldWithDomPenalty(self, a, target, c0, intthr=1.e-8, pScale=1.e-3, crfield0=None, return_grad=False): 
+        scale = 1.e9  # this helps some of the optimizers
+        penaltyScale = pScale
+        assert target in ['Re','Im']
+
+        f = self.Field(c0 + a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+        re = np.real(f);  
+        im = np.imag(f);
+        if crfield0 is None:
+            re0 = 0.*re
+            im0 = 0.*im
+        else:
+            re0 = np.real(crfield0)
+            im0 = np.imag(crfield0)
+            assert re0.shape == re.shape 
+        if target == 'Re':
+             cost = - 0.5*np.sum((re-re0)**2)
+        else:  # target = 'Im'
+             cost = - 0.5*np.sum((im-im0)**2)
+
+        if intthr is not None:  # penalty fcn is Ix - threshold  if Ix > threshold
+            q = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=False, SpeckleFactor=None)  
+            wqth = np.where(q > intthr)[0]
+            q = q[wqth] - intthr
+            cost += penaltyScale*q.sum()
+
+        if not return_grad:
+            return cost*scale
         
+        else:  # return_grad
+           f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
+                                    return_grad=True,SpeckleFactor=0.)
+           re = np.real(f);  dre = np.real(df)
+           im = np.imag(f);  dim = np.imag(df)
+           if target == 'Re':
+                dcost = - np.sum(dre.T*(re-re0), axis=1)
+           else:
+                dcost = - np.sum(dim.T*(im-im0), axis=1)
+                
+           if intthr is not None:
+                Ix, gIx = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
+                gIx = gIx[wqth,:]; #Ix = Ix[wqth]
+                dcost += penaltyScale*np.sum(gIx,axis=0)
+           return cost*scale, dcost*scale
+
+    
+    #This sets up optimizations for minimizing the fuction self.CostCrossField
+    #c0 - see initial dark hole comment
+    #a0 - initial guess to start the optimizer
+    #target - see self.CostCrossField
+    #method - choices are 'CG', 'NCG'
+    def OptCrossField(self, c0, a0=None, target='Re', maxiter=20):
+        options = {'disp': True, 'maxiter': maxiter}
+        
+        cfcn = lambda a: self.CostCrossFieldWithDomPenalty(a, target, c0, intthr=1.e-8,pScale=1.e-4, return_grad=True)  # set costfunction
+        init_cost = cfcn(a0)
+        print('Starting Cost', init_cost[0])
+        
+
+        if False:  #nonlinear constraint for SLSQP
+            f_bound = 1.e-4
+            ub = f_bound*np.ones(2*len(self.HolePixels))
+            def gradReImField(c):
+              s,ds = self.Field(c0+c,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
+              #ss = np.concatenate( (np.real(s),np.imag(s)), axis=0)
+              dsds = np.concatenate( (np.real(ds),np.imag(ds)), axis=0) 
+              return dsds
+            def ReImField(c):
+              s    = self.Field(c0+c,'X','Hole','phase',return_grad=False,SpeckleFactor=None)
+              ss   = np.concatenate((np.real(s),np.imag(s)), axis=0)
+              return ss
+            con = optimize.NonlinearConstraint(ReImField,ub,-ub,jac=gradReImField)
+        
+        return out        
     
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector
@@ -405,23 +246,6 @@ class EFC():
             cost = np.sum(I)
             return scale*cost
         
-    #This calculates the Hessian corresponding to CostHillCross.   See Frazin (2018) JOSAA v35, p594   
-    #Note that the intensity of each detector pixel has its own Hessian, which would be a large object.
-    #  This Hessian assumes that the cost is the sum of the pixel intensities in the dark hole
-    def HessianCostHillCross(self, coef, SpeckleFactor=None):
-        if self.CostScale is None:
-            print("You must run CostHillCross to set self.CostScale first.")
-            assert False
-        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
-        Sys = self.Shy  #  hole system matrix - see self.PolIntensity
-        f = Sys.dot(np.exp(1j*coef))
-        f += SpeckleFactor*self.sphy  # hole speckle field
-        df = 1j*Sys*np.exp(1j*coef)  # same as Sys@np.diag(np.exp(1j*coef))
-        H = np.zeros((len(coef),len(coef)))
-        for m in range(Sys.shape[0]):  #loop over pixels
-            H += -2*np.real( np.outer(df[m,:], df[m,:].conj()) )
-            H += -2*np.real(np.diag( 1j*df[m,:]*f[m].conj() ))  # additional term for diagonal elements
-        return H*self.CostScale
 
     #This calculates the Hessian corresponding to CostHoleDominant.   See Frazin (2018) JOSAA v35, p594   
     #Note that the intensity of each detector pixel has its own Hessian, which would be a large object.
@@ -467,13 +291,194 @@ class EFC():
             print("Final Dark Hole Cost = ", ffvalue)
         return out
     
+    #This makes the 'M matrix', which is the linearized system matrix (in terms of the DM phase),
+    #  but broken into real and imag parts.
+    #c0 - the linearization point 
+    #XorY - 'X' or 'Y'
+    #pixlist - the list of 1D pixel indices within the dark hole that are
+    #  to be kept dark while the cross field is probed.
+    #With U,S,V = np.linalg.svd(M)  the last rows of V, e.g., V[k,:], are basis vectors corresponding to the small SVs of M
+    def MakeMmat(self, c0, XorY='X', pixlist=None):
+        if pixlist is None: pixlist = self.HolePixels
+        assert XorY in ['X', 'Y']
+        lpl = len(pixlist); 
+        spl = pixlist
+        if XorY == 'X': 
+            S = self.Sx
+        else: 
+            S = self.Sy
+        cc0 = np.cos(c0); sc0 = np.sin(c0)
+        M = np.zeros((2*lpl, self.Sx.shape[1]))
+        for k in range(lpl):
+            M[k      ] = np.real(S[spl[k],:])*cc0 - np.imag(S[spl[k],:])*sc0
+            M[k + lpl] = np.real(S[spl[k],:])*sc0 + np.imag(S[spl[k],:])*cc0
+        return M
+
+    #This returns a matrix, V, whose columns for a basis of the M matrix (see self.MakeMmat()  )
+    #c0 - reference DM command, probably corresponding to a dark hole
+    #pixlist - list of pixels that define the M matrix, if None then self.HolePixels is used
+    #sv_thresh the singular value ration used to define the effective null space of M
+    #   the 10^-3 value is chosen by comparing the SVs of self.Shx to the norms of
+    #   vectors obtained by self.Shy@VM[k,:] and examining the slopes of the two curves.
+    #   If you do this you will see that the cross norms decay more slowly at first
+    def GetNull(self, c0, pixlist=None, sv_thresh=1.e-3):
+        if pixlist is None: pixlist = self.HolePixels
+        M = self.MakeMmat(c0, pixlist)
+        UM, SM, VM = np.linalg.svd(M)  # the ROWS of VM, e.g., VM[0,:] are the singular vectors 
+        svals = np.zeros(len(c0))
+        svals[:len(SM)] = SM
+        isv = np.where(svals < SM[0]*sv_thresh)[0]
+        VM = VM.T # now the columns of VM are the singular vectors
+        V = np.zeros((VM.shape[0],len(isv)))
+        for k in range(len(isv)):
+            V[:,k] = VM[:,isv[k]]
+        return V
+    
     
     #==========================#
     #  scrapyard for EFC class #
     #==========================#
     
 
+    def _CostCrossFieldWithDomPenalty(self, a, target, c0, ampthr=1.e-4, return_grad=False): 
+        assert False
+        scale = 1.  # this helps some of the optimizers
+        penaltyScale = 1.
+        assert target in ['Re','-Re','Im','-Im']
 
+        cost = 0.0;
+        f = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+        re = np.real(f);  
+        im = np.imag(f);
+        if target == 'Re':
+             cost += -re.sum()
+        elif target == '-Re':
+             cost += re.sum()
+        elif target == 'Im':
+             cost += -im.sum()
+        else:  # '-Im'
+             cost += im.sum()
+
+        if ampthr is not None:  # penalty fcn is \sqrt(Ix) - threshold  if \sqrt(Ix) > threshold
+            q = np.sqrt( self.PolIntensity(a + c0,'X','Hole','phase',return_grad=False, SpeckleFactor=None)  )
+            wqth = np.where(q > ampthr)[0]
+            q = q[wqth] - ampthr
+            cost += penaltyScale*q.sum()
+
+        if not return_grad:
+            return cost*scale
+        
+        else:  # return_grad
+           f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
+                                    return_grad=True,SpeckleFactor=0.)
+           re = np.real(f);  dre = np.real(df)
+           im = np.imag(f);  dim = np.imag(df)
+           if target == 'Re':
+                dcost = -dre.sum(axis=0)
+           elif target == '-Re':
+                dcost = dre.sum(axis=0)
+           elif target == 'Im':
+                dcost = -dim.sum(axis=0)
+           else:  # '-Im'
+                dcost = dim.sum(axis=0)
+                
+           if ampthr is not None:
+                Ix, gIx = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
+                Ix = Ix[wqth]
+                gIx = gIx[wqth,:]
+                gq = 0.5*(gIx.T*(1./np.sqrt(q))).T
+                dcost += penaltyScale*np.sum(gq,axis=0)
+           return cost*scale, dcost*scale
+
+    #This calculates the Hessian corresponding to CostHillCross.   See Frazin (2018) JOSAA v35, p594   
+    #Note that the intensity of each detector pixel has its own Hessian, which would be a large object.
+    #  This Hessian assumes that the cost is the sum of the pixel intensities in the dark hole
+    def _HessianCostHillCross(self, coef, SpeckleFactor=None):
+        if self.CostScale is None:
+            print("You must run CostHillCross to set self.CostScale first.")
+            assert False
+        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
+        Sys = self.Shy  #  hole system matrix - see self.PolIntensity
+        f = Sys.dot(np.exp(1j*coef))
+        f += SpeckleFactor*self.sphy  # hole speckle field
+        df = 1j*Sys*np.exp(1j*coef)  # same as Sys@np.diag(np.exp(1j*coef))
+        H = np.zeros((len(coef),len(coef)))
+        for m in range(Sys.shape[0]):  #loop over pixels
+            H += -2*np.real( np.outer(df[m,:], df[m,:].conj()) )
+            H += -2*np.real(np.diag( 1j*df[m,:]*f[m].conj() ))  # additional term for diagonal elements
+        return H*self.CostScale
+
+
+    #This calculates Ey on self.HolePixels when the DM command is defined in
+    #  terms of basis vectors
+    #This does not include the speckle field.  In terms of the simulation, it is the model field
+    #The idea is that the basis vectors in a useful effective null space for
+    #  dominant field
+    #a  - vector of null space coefficients. must have len(a) == Vn.shape[1]
+    #   - if Vn=None is it simply a command vector in the original command space
+    #c0 - initial (dark hole) DM command
+    #Vn - the columns of Vn form the new basis.  See self.GetNull
+    #     if None, no new basis is used.
+    #return_grad - if True it returns the derivatives with respect to the coefficient vector a
+    def _CrossFieldNewBasis(self, a, c0, Vn=None, return_grad=True):
+        if Vn is not None:
+            assert len(a) == Vn.shape[1]
+            Vna = Vn@a  # phasor = np.exp(1j*Vn@a)
+        else:
+            assert len(a) == self.Sx.shape[1]
+            Vna = a
+            Vn = np.eye(len(a))
+        
+        S = self.Shy*np.exp(1j*c0)  # equiv to self.Shy@np.diag(np.exp(1j*c0))
+        #ey = S@np.exp(1j*Vna); ey_re = np.real(ey); ey_im = np.imag(ey)  # the code below is slightly faster
+        ey_re = np.real(S)@np.cos(Vna) - np.imag(S)@np.sin(Vna)  # real part of field
+        ey_im = np.real(S)@np.sin(Vna) + np.imag(S)@np.cos(Vna)  # imag part of field
+        if not return_grad:
+            return (ey_re, ey_im)
+        else:
+            Vnc = (Vn.T*np.cos(Vna)).T
+            Vns = (Vn.T*np.sin(Vna)).T
+            dr = - np.real(S)@Vns - np.imag(S)@Vnc
+            di =   np.real(S)@Vnc - np.imag(S)@Vns
+            return (ey_re, ey_im, dr, di)
+        
+    #Ithresh - the intensity level at which the penalty for X intensity turns on     
+    def _CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False, Ithresh = 1.e-9, scale=1.):
+        def QuadThreshPenalty(s, thr, s_grad=None, return_grad=False, offset=1.e-15):  #  assumes s >=0.  offset is small intensity value
+            wh = np.where(s > thr)[0]
+            swt = s[wh] - thr
+            pen = 0.5*np.sum( swt**2 ) + offset
+            if not return_grad:
+                return  pen
+            else: 
+                assert (s_grad is not None)
+                sgw = s_grad[wh,:]
+                gpen = np.sum( sgw.T*swt, axis=1 ) 
+                return pen, gpen
+        assert target in ['Re','Im']
+        re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)
+        if not return_grad:
+            Ix = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',False,None)
+            re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
+            #cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
+            den = QuadThreshPenalty(Ix,Ithresh,None,False)         
+        else:
+            Ix, gIx = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',True,None)
+            re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
+            den, dden = QuadThreshPenalty(Ix,Ithresh,gIx,True) 
+            dden = Vn.T@dden
+        if target == 'Re':
+            num = np.sum((re-re0)**2)
+        else:
+            num = np.sum((im-im0)**2)
+        cost = - num/den  # we want to minimize this ratio
+        if not return_grad: return cost*scale
+        if target == 'Re':   
+            dnum = 2*dre.T@(re - re0)
+        elif target == 'Im':
+            dnum = 2*dim.T@(im - im0)
+        dcost = - dnum/den + (num/den**2)*dden
+        return cost*scale, dcost*scale
     def _CostCrossIntensityRatio(self, a, target, c0, Vn, return_grad=False):
         assert False
         scale = 1.   # playing with this can help optimization sometimes
