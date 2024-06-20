@@ -154,8 +154,10 @@ class EFC():
     #intthr - intensity threshold for cost penalty of dominant polarization 
     #      - if None, not applied
     #return_grad (with respect to a)
-    def CostCrossFieldWithDomPenalty(self, a, target, c0, intthr=1.e-8, pScale=1.e-3, crfield0=None, return_grad=False): 
+    def CostCrossFieldWithDomPenalty(self, a, target, c0, intthr=1.e-7, pScale=1.e-3, crfield0=None, return_grad=False): 
         scale = 1.e9  # this helps some of the optimizers
+        cmdthr = 0.3 ;  #command amplitude limit (radians)
+        cmdpenamp = 1.e9  # command amplitude penalty scale 
         penaltyScale = pScale
         assert target in ['Re','Im']
 
@@ -173,6 +175,11 @@ class EFC():
              cost = - 0.5*np.sum((re-re0)**2)
         else:  # target = 'Im'
              cost = - 0.5*np.sum((im-im0)**2)
+
+        wathp = np.where(a >  cmdthr)[0]
+        wathm = np.where(a < -cmdthr)[0]
+        cost += cmdpenamp*np.sum(  a[wathp] - cmdthr)
+        cost += cmdpenamp*np.sum(- a[wathm] - cmdthr)
 
         if intthr is not None:  # penalty fcn is Ix - threshold  if Ix > threshold
             q = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=False, SpeckleFactor=None)  
@@ -192,7 +199,10 @@ class EFC():
                 dcost = - np.sum(dre.T*(re-re0), axis=1)
            else:
                 dcost = - np.sum(dim.T*(im-im0), axis=1)
-                
+            
+           dcost += cmdpenamp*len(wathp)
+           dcost -= cmdpenamp*len(wathm) 
+           
            if intthr is not None:
                 Ix, gIx = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
                 gIx = gIx[wqth,:]; #Ix = Ix[wqth]
