@@ -146,20 +146,30 @@ class EFC():
         df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.    
         return (f, df)
     
-    #This is a cost function for minimizing the target (see below) corresponding
+    #This is a cost function for minimizing the ReOrIm (see below) corresponding
     #  to real or imag component of the cross field
     #a - command for departure from c0
-    #target - quantity to be minimized.  options are 'Re', 'Im' #'-Re', '-Im'
     #c0 - dark hole command for the dominant field
-    #intthr - intensity threshold for cost penalty of dominant polarization 
+    #return_grad (with respect to a) - bool
+    #crfield0 - "cross reference field".  The cost is calculated in terms of the difference between the field and crfield0
+    #constraintPixels - a list of pixels whose dominant intensity is included in the cost
+    #     if None, then self.HolePixels is used
+    #optPixels - a list of pixels whose fields are to be optimize
+    #     if None, then self.HolePixels is used
+    #ReOrIm - quantity to be minimized.  options are 'Re', 'Im' #
+    #intthr - intensity threshold for cost penalty of dominant intensity 
     #      - if None, not applied
-    #return_grad (with respect to a)
-    def CostCrossFieldWithDomPenalty(self, a, target, c0, intthr=1.e-7, pScale=1.e-3, crfield0=None, return_grad=False): 
+    #pScale - multiplier applied to dominant intensity penalty above 'intthr'
+    def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, crfield0=None, constraintPixels=None, OptPixels=None, 
+                                     ReOrIm='Re', intthr=1.e-7, pScale=1.e-3): 
         scale = 1.e9  # this helps some of the optimizers
         cmdthr = 0.3 ;  #command amplitude limit (radians)
         cmdpenamp = 1.e9  # command amplitude penalty scale 
         penaltyScale = pScale
-        assert target in ['Re','Im']
+        assert ReOrIm in ['Re','Im']
+        if crfield0 is None:
+            print("This routine is much more effective when crfield0 is set to a useful reference cross field.")
+            assert False
 
         f = self.Field(c0 + a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
         re = np.real(f);  
@@ -171,9 +181,9 @@ class EFC():
             re0 = np.real(crfield0)
             im0 = np.imag(crfield0)
             assert re0.shape == re.shape 
-        if target == 'Re':
+        if ReOrIm == 'Re':
              cost = - 0.5*np.sum((re-re0)**2)
-        else:  # target = 'Im'
+        else:  # ReOrIm = 'Im'
              cost = - 0.5*np.sum((im-im0)**2)
 
         wathp = np.where(a >  cmdthr)[0]
@@ -195,7 +205,7 @@ class EFC():
                                     return_grad=True,SpeckleFactor=0.)
            re = np.real(f);  dre = np.real(df)
            im = np.imag(f);  dim = np.imag(df)
-           if target == 'Re':
+           if ReOrIm == 'Re':
                 dcost = - np.sum(dre.T*(re-re0), axis=1)
            else:
                 dcost = - np.sum(dim.T*(im-im0), axis=1)
@@ -213,12 +223,12 @@ class EFC():
     #This sets up optimizations for minimizing the fuction self.CostCrossField
     #c0 - see initial dark hole comment
     #a0 - initial guess to start the optimizer
-    #target - see self.CostCrossField
+    #ReOrIm - see self.CostCrossField
     #method - choices are 'CG', 'NCG'
-    def OptCrossField(self, c0, a0=None, target='Re', maxiter=20):
+    def OptCrossField(self, c0, a0=None, ReOrIm='Re', maxiter=20):
         options = {'disp': True, 'maxiter': maxiter}
         
-        cfcn = lambda a: self.CostCrossFieldWithDomPenalty(a, target, c0, intthr=1.e-8,pScale=1.e-4, return_grad=True)  # set costfunction
+        cfcn = lambda a: self.CostCrossFieldWithDomPenalty(a, ReOrIm, c0, intthr=1.e-8,pScale=1.e-4, return_grad=True)  # set costfunction
         init_cost = cfcn(a0)
         print('Starting Cost', init_cost[0])
         
@@ -350,21 +360,21 @@ class EFC():
     #==========================#
     
 
-    def _CostCrossFieldWithDomPenalty(self, a, target, c0, ampthr=1.e-4, return_grad=False): 
+    def _CostCrossFieldWithDomPenalty(self, a, ReOrIm, c0, ampthr=1.e-4, return_grad=False): 
         assert False
         scale = 1.  # this helps some of the optimizers
         penaltyScale = 1.
-        assert target in ['Re','-Re','Im','-Im']
+        assert ReOrIm in ['Re','-Re','Im','-Im']
 
         cost = 0.0;
         f = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
         re = np.real(f);  
         im = np.imag(f);
-        if target == 'Re':
+        if ReOrIm == 'Re':
              cost += -re.sum()
-        elif target == '-Re':
+        elif ReOrIm == '-Re':
              cost += re.sum()
-        elif target == 'Im':
+        elif ReOrIm == 'Im':
              cost += -im.sum()
         else:  # '-Im'
              cost += im.sum()
@@ -383,11 +393,11 @@ class EFC():
                                     return_grad=True,SpeckleFactor=0.)
            re = np.real(f);  dre = np.real(df)
            im = np.imag(f);  dim = np.imag(df)
-           if target == 'Re':
+           if ReOrIm == 'Re':
                 dcost = -dre.sum(axis=0)
-           elif target == '-Re':
+           elif ReOrIm == '-Re':
                 dcost = dre.sum(axis=0)
-           elif target == 'Im':
+           elif ReOrIm == 'Im':
                 dcost = -dim.sum(axis=0)
            else:  # '-Im'
                 dcost = dim.sum(axis=0)
@@ -453,7 +463,7 @@ class EFC():
             return (ey_re, ey_im, dr, di)
         
     #Ithresh - the intensity level at which the penalty for X intensity turns on     
-    def _CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False, Ithresh = 1.e-9, scale=1.):
+    def _CostCrossDiffIntensityRatio(self, a, ReOrIm, c0, Vn, return_grad=False, Ithresh = 1.e-9, scale=1.):
         def QuadThreshPenalty(s, thr, s_grad=None, return_grad=False, offset=1.e-15):  #  assumes s >=0.  offset is small intensity value
             wh = np.where(s > thr)[0]
             swt = s[wh] - thr
@@ -465,7 +475,7 @@ class EFC():
                 sgw = s_grad[wh,:]
                 gpen = np.sum( sgw.T*swt, axis=1 ) 
                 return pen, gpen
-        assert target in ['Re','Im']
+        assert ReOrIm in ['Re','Im']
         re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)
         if not return_grad:
             Ix = self.PolIntensity(c0 + Vn@a,'X','Hole','phase',False,None)
@@ -477,22 +487,22 @@ class EFC():
             re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
             den, dden = QuadThreshPenalty(Ix,Ithresh,gIx,True) 
             dden = Vn.T@dden
-        if target == 'Re':
+        if ReOrIm == 'Re':
             num = np.sum((re-re0)**2)
         else:
             num = np.sum((im-im0)**2)
         cost = - num/den  # we want to minimize this ratio
         if not return_grad: return cost*scale
-        if target == 'Re':   
+        if ReOrIm == 'Re':   
             dnum = 2*dre.T@(re - re0)
-        elif target == 'Im':
+        elif ReOrIm == 'Im':
             dnum = 2*dim.T@(im - im0)
         dcost = - dnum/den + (num/den**2)*dden
         return cost*scale, dcost*scale
-    def _CostCrossIntensityRatio(self, a, target, c0, Vn, return_grad=False):
+    def _CostCrossIntensityRatio(self, a, ReOrIm, c0, Vn, return_grad=False):
         assert False
         scale = 1.   # playing with this can help optimization sometimes
-        assert target in ['Re','Im']
+        assert ReOrIm in ['Re','Im']
         if not return_grad:
             re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
             cIx = self.CostHoleDominant(c0 + Vn@a, return_grad=False, scale=1.0)
@@ -500,24 +510,24 @@ class EFC():
             re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
             cIx, dcIx = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.0)
             dcIx = Vn.T@dcIx
-        if target == 'Re':
+        if ReOrIm == 'Re':
             num = np.sum(re*re)
         else:
             num = np.sum(im*im)
         cost = - num/cIx  # we want to maximize this ratio
         if not return_grad: return cost*scale
-        if target == 'Re':   
+        if ReOrIm == 'Re':   
             dnum = 2*dre.T@re
-        elif target == 'Im':
+        elif ReOrIm == 'Im':
             dnum = 2*dim.T@im
         dcost = - dnum/cIx + (num/cIx**2)*dcIx
         return cost*scale, dcost*scale
 
     #This cost fcn does modulate the cross field much because most of the gradient comes 
     #  from the dominant field
-    def _CostCrossDiffIntensityRatio(self, a, target, c0, Vn, return_grad=False, scale=1.e8):
+    def _CostCrossDiffIntensityRatio(self, a, ReOrIm, c0, Vn, return_grad=False, scale=1.e8):
         assert False
-        assert target in ['Re','Im']
+        assert ReOrIm in ['Re','Im']
         re0, im0 = self.CrossFieldNewBasis(np.zeros(a.shape),c0,Vn,return_grad=False)      
         if not return_grad:
             re, im = self.CrossFieldNewBasis(a,c0,Vn,return_grad=False)
@@ -526,15 +536,15 @@ class EFC():
             re, im, dre, dim = self.CrossFieldNewBasis(a,c0,Vn,return_grad=True) 
             cIx, dcIx = self.CostHoleDominant(c0 + Vn@a, return_grad=True, scale=1.0)
             dcIx = Vn.T@dcIx
-        if target == 'Re':
+        if ReOrIm == 'Re':
             num = np.sum((re-re0)**2)
         else:
             num = np.sum((im-im0)**2)
         cost = - num/cIx  # we want to minimize this ratio
         if not return_grad: return cost*scale
-        if target == 'Re':   
+        if ReOrIm == 'Re':   
             dnum = 2*dre.T@(re - re0)
-        elif target == 'Im':
+        elif ReOrIm == 'Im':
             dnum = 2*dim.T@(im - im0)
         dcost = - dnum/cIx + (num/cIx**2)*dcIx
         return cost*scale, dcost*scale
