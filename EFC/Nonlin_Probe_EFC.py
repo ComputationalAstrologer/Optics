@@ -24,9 +24,10 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 
 #This calculates the -1*(log likelihood) under a poisson distribution
-#   Ncntote that the Ncnt! term is not included
+#   Note that the Ncnt! term is not included
 #Ncnt - a list (or array) of count values (measurements)
-#I - a list (or array) of intensity values (units are counts, but need not be integer valued.  I is the response variable
+#I - a list (or array) of intensity values (units are counts, but need not be integer valued.)
+#    I is the response variable.
 #    note len(I) must equal len(Ncnt)
 #Ig  - optional list (not array!) of intensity gradients. If provided the gradient will be output
 #Igg - optional list (not array!) of intensity hessians.  If provided, the hessian will be output.
@@ -63,13 +64,13 @@ def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
 
 #This produces the intensity in units of photons at a single pixel
 # x is the state vector
-#   x[0] - quantity that specifies incoherent intensit -- see kwarg "IncModel"
+#   x[0] - quantity that specifies incoherent intensity -- see kwarg "IncModel"
 #   x[1] - speckle field (real part)
 #   x[2] - speckle field (imag part)
 # probes - a list, tuple, or array of complex numbers corresponding to probe fields
 # IncModel - if 'log' (not recommended) -  the input parameter is the log  of the incoherent intensity (removes positivity requirement)
 #          - if 'sqrt' - the input parameter is the sqrt of the incoherent intensity.  There is no positivity requirement
-#Note when being used by MonteCarloRun, this function need to be fed x in the 'regression' space,
+#Note when being used by MonteCarloRun, this function needs to be fed x in the 'regression' space,
 #  not the 'physical' space.
 def Intensity(x, probes, return_grad=False, return_hess=False, IncModel='sqrt'):
     assert IncModel == "sqrt" or IncModel == "log"
@@ -129,7 +130,7 @@ def MonteCarloRun(Ntrials=1000, IncModel='sqrt', Estimator='Nonlin'):
     f  = np.sqrt(sc*40)*np.exp(1j*np.pi*5/11)   # field units 
     p1 = np.sqrt(sc*150)*np.exp(1j*np.pi*7/13)  # field units
     p2 = p1*np.exp(-1j*np.pi/2)  # field units
-    xtruephys = np.array([Iinc, np.real(f), np.imag(f)])  # the estimates we hope to obtain - this is in the 'physical' space not the  regressions space
+    xtruephys = np.array([Iinc, np.real(f), np.imag(f)])  # the estimates we hope to obtain - this is in the 'physical' space not the  regression space
     probes = np.array([0., p1, p2])
     if Estimator == 'Pairwise':  #this is needed to cut the exposure time in half
         probes = np.array([0, 0, p1, -p1, p2, -p2])/np.sqrt(2)
