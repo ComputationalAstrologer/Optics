@@ -151,36 +151,36 @@ class EFC():
     #a - command for departure from c0
     #c0 - dark hole command for the dominant field
     #return_grad (with respect to a) - bool
-    #crfield0 - "cross reference field".  The cost is calculated in terms of the difference between the field and crfield0
-    #constraintPixels - a list of pixels whose dominant intensity is included in the cost
-    #     if None, then self.HolePixels is used
-    #optPixels - a list of pixels whose fields are to be optimize
+    #optPixels - a list of pixels whose fields are to be optimized (all must in self.HolePixels)
     #     if None, then self.HolePixels is used
     #ReOrIm - quantity to be minimized.  options are 'Re', 'Im' #
     #intthr - intensity threshold for cost penalty of dominant intensity 
     #      - if None, not applied
     #pScale - multiplier applied to dominant intensity penalty above 'intthr'
-    def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, crfield0=None, constraintPixels=None, OptPixels=None, 
-                                     ReOrIm='Re', intthr=1.e-7, pScale=1.e-3): 
+    def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, OptPixels=None, ReOrIm='Re', intthr=1.e-7, pScale=1.e-3): 
         scale = 1.e9  # this helps some of the optimizers
-        cmdthr = 0.3 ;  #command amplitude limit (radians)
+        cmdthr = 0.2; # command amplitude limit (radians) - designed to be the valid range of the linear approx to exp(1j*x)
         cmdpenamp = 1.e9  # command amplitude penalty scale 
-        penaltyScale = pScale
         assert ReOrIm in ['Re','Im']
-        if crfield0 is None:
-            print("This routine is much more effective when crfield0 is set to a useful reference cross field.")
-            assert False
+        if OptPixels is None:
+            crfield0 = self.Field(c0    , XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.) 
+            f  =       self.Field(c0 + a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+        else:  # this is needed because the constraintPixels and OptPixels indices correspond to the full image 
+            f =        np.zeros((len(OptPixels),)).astype('complex')
+            crfield0 = np.zeros((len(OptPixels),)).astype('complex')
+            f_   = self.Field(c0 + a, XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=0.) 
+            crf_ = self.Field(c0    , XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+            for k in range(len(OptPixels)):
+                assert OptPixels[k] in self.HolePixels
+                f[k]        =   f_[OptPixels[k]]
+                crfield0[k] = crf_[OptPixels[k]]
+need to write setup code for faster execution
 
-        f = self.Field(c0 + a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
         re = np.real(f);  
         im = np.imag(f);
-        if crfield0 is None:
-            re0 = 0.*re
-            im0 = 0.*im
-        else:
-            re0 = np.real(crfield0)
-            im0 = np.imag(crfield0)
-            assert re0.shape == re.shape 
+        re0 = np.real(crfield0)
+        im0 = np.imag(crfield0)
+        assert re0.shape == re.shape 
         if ReOrIm == 'Re':
              cost = - 0.5*np.sum((re-re0)**2)
         else:  # ReOrIm = 'Im'
@@ -195,14 +195,22 @@ class EFC():
             q = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=False, SpeckleFactor=None)  
             wqth = np.where(q > intthr)[0]
             q = q[wqth] - intthr
-            cost += penaltyScale*q.sum()
+            cost += pScale*q.sum()
 
         if not return_grad:
             return cost*scale
         
         else:  # return_grad
-           f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
-                                    return_grad=True,SpeckleFactor=0.)
+           if OptPixels is None:
+                f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
+                                   return_grad=True,SpeckleFactor=0.)
+           else:
+                f_, df_ = self.Field(c0+a, XorY='Y',region='Full',DM_mode='phase',
+                                   return_grad=True,SpeckleFactor=0.)
+                df = np.zeros((len(optpix),df_.shape[1])).astype('complex')
+                for k in range(len(optpix)):
+                    df[k,:] = df_[k,optpix[k,:]]
+ 
            re = np.real(f);  dre = np.real(df)
            im = np.imag(f);  dim = np.imag(df)
            if ReOrIm == 'Re':
@@ -216,7 +224,7 @@ class EFC():
            if intthr is not None:
                 Ix, gIx = self.PolIntensity(a + c0,'X','Hole','phase',return_grad=True, SpeckleFactor=None)
                 gIx = gIx[wqth,:]; #Ix = Ix[wqth]
-                dcost += penaltyScale*np.sum(gIx,axis=0)
+                dcost += pScale*np.sum(gIx,axis=0)
            return cost*scale, dcost*scale
 
     
