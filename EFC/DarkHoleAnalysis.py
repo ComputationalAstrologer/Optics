@@ -28,6 +28,7 @@ Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
 ######################################################################
 
 extfac = np.sqrt(1.e-5) # linear polarizer (amplitude) extinction factor
+
 lgabsr = lambda a: np.log10(np.abs(np.real(a)))
 lgabsi = lambda a: np.log10(np.abs(np.imag(a)))
 
@@ -44,8 +45,11 @@ plt.figure(); plt.plot(lgabsr(fA0hx),'ro',lgabsr(fA0hy),'rx',lgabsi(fA0hx),'co',
 
 sI0x = np.sqrt(A.PolIntensity(Cdh ,'X','Hole','phase',False,None) )
 f0y = A.Field(Cdh, XorY='Y',region='Hole',DM_mode='phase', return_grad=False,SpeckleFactor=0.)
-cfcn = lambda a: A.CostCrossFieldWithDomPenalty(a, 'Re', Cdh, intthr=1.e-7, pScale=3.e-5, crfield0=f0y, return_grad=False)
-out = optimize.minimize(cfcn, 0*Cdh, options={'disp':True,'maxiter':180}, method='Powell',jac=False)
+
+cfcn = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=True, crfield0=f0y, OptPixels=None,ReOrIm='Re',intthr=5.e-8,pScale=1.e-3)
+
+out = optimize.minimize(cfcn, 0*Cdh, options={'disp':True,'maxiter':80}, method='CG',jac=True)
+
 sIx = np.sqrt(A.PolIntensity(Cdh +out['x'],'X','Hole','phase',False,None) )
 fy = A.Field(Cdh+out['x'], XorY='Y',region='Hole',DM_mode='phase', return_grad=False,SpeckleFactor=0.)
 plt.figure(); plt.plot(extfac*sI0x,'k.',extfac*sIx,'k*');
@@ -55,30 +59,32 @@ plt.plot(np.real(f0y),'ro',np.imag(f0y),'rx',np.real(fy),'co',np.imag(fy),'cx');
 
 filep = open('3_lambda_D_probe.pickle','rb'); stuff = pickle.load(filep); filep.close()
 C_pre = stuff['probe_real']; C_pim = stuff['probe_imag'];
+
+pm = -1.
 IAhx0 = A.PolIntensity(Cdh,'X','Hole','phase',False,None)
 fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);
-IAhx_pre = A.PolIntensity(Cdh + C_pre,'X','Hole','phase',False,None)
-IAhx_pim = A.PolIntensity(Cdh + C_pim,'X','Hole','phase',False,None)
-fAhy_pre = A.Field(Cdh + C_pre,'Y','Hole','phase',False,0.);
-fAhy_pim = A.Field(Cdh + C_pim,'Y','Hole','phase',False,0.);
+IAhx_pre = A.PolIntensity(Cdh + pm*C_pre,'X','Hole','phase',False,None)
+IAhx_pim = A.PolIntensity(Cdh + pm*C_pim,'X','Hole','phase',False,None)
+fAhy_pre = A.Field(Cdh + pm*C_pre,'Y','Hole','phase',False,0.);
+fAhy_pim = A.Field(Cdh + pm*C_pim,'Y','Hole','phase',False,0.);
 
 plt.figure(); #result of modulation with 'Re' target
 plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
 plt.plot(extfac*np.sqrt(IAhx_pre),marker='s',color='tan',ls='None');
 plt.plot(np.abs(np.real(fAhy_pre) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
 plt.plot(np.abs(np.imag(fAhy_pre) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
-#plt.plot(np.real(fAhy_pre),marker='d',color='red',ls='None');
-#plt.plot(np.imag(fAhy_pre),marker='p',color='blue',ls='None');
-
+plt.title('Real Probe Target');plt.xlabel('pixel index'); plt.ylabel('modulation field')
 
 plt.figure();  # result of modulation with 'Im' target
 plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
 plt.plot(extfac*np.sqrt(IAhx_pim),marker='s',color='tan',ls='None');
 plt.plot(np.abs(np.real(fAhy_pim) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
 plt.plot(np.abs(np.imag(fAhy_pim) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
+plt.title('Imag Probe Target');plt.xlabel('pixel index'); plt.ylabel('modulation field')
 
 
 
+######################################################################
 
 #single pixel experiment
 #this creates a modulating DM command for Ey in the Null space of Shx
