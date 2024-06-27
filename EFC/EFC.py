@@ -70,6 +70,8 @@ class EFC():
         self.spx = self.spx.flatten()
         self.spy = self.spy.flatten()
         self.CostScale = None
+        self.CrossOptimSetUp = False
+        self.OptPixels = []
         
         if HolePixels is not None:  #trim the matrices and the speckle field to correspond to HoleBndy
             self.Shx  = np.zeros((len(HolePixels), self.ndm**2)).astype('complex')  #trimmed system matrices
@@ -146,6 +148,23 @@ class EFC():
         df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.    
         return (f, df)
     
+    def SetupCrossOpt(self, c0, OptPixels):
+        self.CrossOptimSetUp = True
+        self.OptPixels = OptPixels
+        crfield0 = self.Field(c0, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+        if OptPixels is None:
+            self.crfield0 = crfield0
+            return None
+        self.OptPixHoleDex = []
+        self.crfield0 = np.zeros((len(OptPixels),)).astype('complex')
+        counter = -1
+        for opix in OptPixels:
+            assert opix in self.HolePixels
+            opdex = self.HolePixels.index(opix)
+            self.OptPixHoleDex.append( opdex )
+            counter += 1
+            self.crfield0[counter] = crfield0[opdex]
+        return None
     #This is a cost function for minimizing the ReOrIm (see below) corresponding
     #  to real or imag component of the cross field
     #a - command for departure from c0
@@ -159,22 +178,20 @@ class EFC():
     #pScale - multiplier applied to dominant intensity penalty above 'intthr'
     def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, OptPixels=None, ReOrIm='Re', intthr=1.e-7, pScale=1.e-3): 
         scale = 1.e9  # this helps some of the optimizers
-        cmdthr = 0.2; # command amplitude limit (radians) - designed to be the valid range of the linear approx to exp(1j*x)
+        cmdthr = 0.15; # command amplitude limit (radians) - designed to be the valid range of the linear approx to exp(1j*x)
         cmdpenamp = 1.e9  # command amplitude penalty scale 
         assert ReOrIm in ['Re','Im']
-        if OptPixels is None:
-            crfield0 = self.Field(c0    , XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.) 
-            f  =       self.Field(c0 + a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+        if (self.CrossOptimSetUp is False) or (OptPixels != self.OptPixels): 
+            self.SetupCrossOpt(c0, OptPixels)
+            
+        crfield0 = self.crfield0    
+        fh  = self.Field(c0 + a, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+        if OptPixels is None: 
+            f = fh
         else:  # this is needed because the constraintPixels and OptPixels indices correspond to the full image 
-            f =        np.zeros((len(OptPixels),)).astype('complex')
-            crfield0 = np.zeros((len(OptPixels),)).astype('complex')
-            f_   = self.Field(c0 + a, XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=0.) 
-            crf_ = self.Field(c0    , XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
+            f = np.zeros((len(OptPixels),)).astype('complex')
             for k in range(len(OptPixels)):
-                assert OptPixels[k] in self.HolePixels
-                f[k]        =   f_[OptPixels[k]]
-                crfield0[k] = crf_[OptPixels[k]]
-need to write setup code for faster execution
+                f[k] = fh[self.OptPixDex[k]]
 
         re = np.real(f);  
         im = np.imag(f);
@@ -205,11 +222,11 @@ need to write setup code for faster execution
                 f, df = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
                                    return_grad=True,SpeckleFactor=0.)
            else:
-                f_, df_ = self.Field(c0+a, XorY='Y',region='Full',DM_mode='phase',
+                f_, df_ = self.Field(c0+a, XorY='Y',region='Hole',DM_mode='phase',
                                    return_grad=True,SpeckleFactor=0.)
-                df = np.zeros((len(optpix),df_.shape[1])).astype('complex')
-                for k in range(len(optpix)):
-                    df[k,:] = df_[k,optpix[k,:]]
+                df = np.zeros((len(OptPixels),df_.shape[1])).astype('complex')
+                for k in range(len(OptPixels)):
+                    df[k,:] = df_[self.OptPixDex[k],:]
  
            re = np.real(f);  dre = np.real(df)
            im = np.imag(f);  dim = np.imag(df)
@@ -217,7 +234,6 @@ need to write setup code for faster execution
                 dcost = - np.sum(dre.T*(re-re0), axis=1)
            else:
                 dcost = - np.sum(dim.T*(im-im0), axis=1)
-            
            dcost += cmdpenamp*len(wathp)
            dcost -= cmdpenamp*len(wathm) 
            

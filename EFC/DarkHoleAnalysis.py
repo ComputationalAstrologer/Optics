@@ -38,29 +38,38 @@ plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');p
 
 pli = MakePixList([160,164,160,164], (256,256))
 A = EFC(HolePixels=pli, SpeckleFactor=Z.SpeckleFactor)
-fA0hx = A.Field(Cdh,'X','Hole','phase',return_grad=False,SpeckleFactor=None)*extfac
-fA0hy = A.Field(Cdh,'Y','Hole','phase',return_grad=False,SpeckleFactor=None)
-  
-plt.figure(); plt.plot(lgabsr(fA0hx),'ro',lgabsr(fA0hy),'rx',lgabsi(fA0hx),'co',lgabsi(fA0hy),'cx')
 
-sI0x = np.sqrt(A.PolIntensity(Cdh ,'X','Hole','phase',False,None) )
-f0y = A.Field(Cdh, XorY='Y',region='Hole',DM_mode='phase', return_grad=False,SpeckleFactor=0.)
+cfcnIm = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None,ReOrIm='Im',intthr=1.e-6,pScale=2.e-3)
+cfcnRe = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None,ReOrIm='Re',intthr=1.e-6,pScale=2.e-3)
 
-cfcn = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=True, crfield0=f0y, OptPixels=None,ReOrIm='Re',intthr=5.e-8,pScale=1.e-3)
+Ntrials = 21
+sol_re = []; sol_im = []; cost_re =[]; cost_im = []
+for k in range(Ntrials):
+    out = optimize.minimize(cfcnRe, .15*np.random.randn(1089), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
+    sol_re.append(out['x']); cost_re.append(out['fun'])
+    out = optimize.minimize(cfcnIm, .15*np.random.randn(1089), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
+    sol_im.append(out['x']); cost_im.append(out['fun'])
 
-out = optimize.minimize(cfcn, 0*Cdh, options={'disp':True,'maxiter':80}, method='CG',jac=True)
+sol = sol_re + sol_im; 
+cost = cost_re + cost_im
 
-sIx = np.sqrt(A.PolIntensity(Cdh +out['x'],'X','Hole','phase',False,None) )
-fy = A.Field(Cdh+out['x'], XorY='Y',region='Hole',DM_mode='phase', return_grad=False,SpeckleFactor=0.)
-plt.figure(); plt.plot(extfac*sI0x,'k.',extfac*sIx,'k*');
-plt.plot(np.real(f0y),'ro',np.imag(f0y),'rx',np.real(fy),'co',np.imag(fy),'cx'); plt.title('thr=1.e-7, pScale=3.e-5, target=Re');
+sIx0 = np.sqrt(A.PolIntensity(Cdh,'X','Hole','phase',False,None))
+fy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);
+sI_p = []
+fyr = []; fyi = [];
+for cmd in sol:
+    sI_p.append( np.sqrt(A.PolIntensity(Cdh + cmd,'X','Hole','phase',False,None)) )
+    fyr.append( np.real(A.Field(Cdh + cmd,'Y','Hole','phase',False,0.)) - np.real(fy0))
+    fyi.append( np.imag(A.Field(Cdh + cmd,'Y','Hole','phase',False,0.)) - np.imag(fy0) )
+
+
 
 ##########################
 
 filep = open('3_lambda_D_probe.pickle','rb'); stuff = pickle.load(filep); filep.close()
 C_pre = stuff['probe_real']; C_pim = stuff['probe_imag'];
 
-pm = -1.
+pm = 1.
 IAhx0 = A.PolIntensity(Cdh,'X','Hole','phase',False,None)
 fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);
 IAhx_pre = A.PolIntensity(Cdh + pm*C_pre,'X','Hole','phase',False,None)
@@ -71,17 +80,21 @@ fAhy_pim = A.Field(Cdh + pm*C_pim,'Y','Hole','phase',False,0.);
 plt.figure(); #result of modulation with 'Re' target
 plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
 plt.plot(extfac*np.sqrt(IAhx_pre),marker='s',color='tan',ls='None');
-plt.plot(np.abs(np.real(fAhy_pre) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
-plt.plot(np.abs(np.imag(fAhy_pre) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
+plt.plot((np.real(fAhy_pre) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
+plt.plot((np.imag(fAhy_pre) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
 plt.title('Real Probe Target');plt.xlabel('pixel index'); plt.ylabel('modulation field')
 
 plt.figure();  # result of modulation with 'Im' target
 plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
 plt.plot(extfac*np.sqrt(IAhx_pim),marker='s',color='tan',ls='None');
-plt.plot(np.abs(np.real(fAhy_pim) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
-plt.plot(np.abs(np.imag(fAhy_pim) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
+plt.plot((np.real(fAhy_pim) - np.real(fAhy0)),marker='d',color='crimson',ls='None');
+plt.plot((np.imag(fAhy_pim) - np.imag(fAhy0)),marker='p',color='dodgerblue',ls='None');
 plt.title('Imag Probe Target');plt.xlabel('pixel index'); plt.ylabel('modulation field')
 
+plt.figure(); # fields w/o modulation
+plt.plot(np.real(fAhy0),marker='d',color='crimson',ls='None');
+plt.plot(np.imag(fAhy0),marker='p',color='dodgerblue',ls='None');
+plt.title('Nominal Dark Hole Cross field');plt.xlabel('pixel index'); plt.ylabel('nominal field')
 
 
 ######################################################################
