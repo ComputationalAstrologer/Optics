@@ -42,6 +42,32 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
+#This returns the Cramer-Rao bound matrrix and the Fisher Information (FIM), if desired,
+#  under the assumption that the measurements are Poisson distributed.
+#If a scalar number, S, is the expected number of counts and the actual number
+#  of counts, n, is Poisson distributed denoted as P(n|S), we have <n> = s and <n^2> = S^2 + S.
+#  Let the gradient vector of S w.r.t. some parameters be gs, then 1 page of work shows that
+#  the Fisher information matrix (FIM) is ((1+S)/S)*outer_prod(gs,gs)
+#  So, Cramer-Rao bound is given by (S/(1+S))*inv(outer_prod(gs,gs))
+#Note that the FIMs of independent experiments add. 
+#S - is a vector (or list) of expected count numbers from independent experiments
+#Sg - is an array of gradients w.r.t. the parameters to be estimated.
+#  Sg.shape[0] must equal len(S)
+#return_FIM - if True, the FIM will be returned, too
+def CRB_Poisson(S, Sg, return_FIM=False):
+    assert len(S) == Sg.shape[0]
+    M = len(S); N = Sg.shape[1]
+    fim = np.zeros((N,N))
+    for k in range(M):
+        fim += (1. + 1./S[k])*np.outer( Sg[k,:], Sg[k,:] )
+    crb = np.linalg.inv(fim)
+    if not return_FIM: 
+        return crb
+    else:
+        return (crb, fim)
+    
+
+
 #===============================================================================
 #                      EFC Class starts here
 #==============================================================================
@@ -256,7 +282,6 @@ class EFC():
         init_cost = cfcn(a0)
         print('Starting Cost', init_cost[0])
         
-
         if False:  #nonlinear constraint for SLSQP
             f_bound = 1.e-4
             ub = f_bound*np.ones(2*len(self.HolePixels))
@@ -270,8 +295,7 @@ class EFC():
               ss   = np.concatenate((np.real(s),np.imag(s)), axis=0)
               return ss
             con = optimize.NonlinearConstraint(ReImField,ub,-ub,jac=gradReImField)
-        
-        return out        
+        return None        
     
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector
