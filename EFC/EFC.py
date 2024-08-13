@@ -47,19 +47,23 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
 #If a scalar number, S, is the expected number of counts and the actual number
 #  of counts, n, is Poisson distributed denoted as P(n|S), we have <n> = s and <n^2> = S^2 + S.
 #  Let the gradient vector of S w.r.t. some parameters be gs, then 1 page of work shows that
-#  the Fisher information matrix (FIM) is ((1+S)/S)*outer_prod(gs,gs)
-#  So, Cramer-Rao bound is given by (S/(1+S))*inv(outer_prod(gs,gs))
+#  the Fisher information matrix (FIM) for one experiment is ( 1/(S + rn) )*outer_prod(gs,gs).  
+#  outer_prod(gs,gs) is a singulat matrix, which can be shown by factorization since: (aa ab; ab bb) = (a 0; 0 b)(a b; a b)  
 #Note that the FIMs of independent experiments add. 
+#Then, Cramer-Rao bound is given by inv (FIM)
 #S - is a vector (or list) of expected count numbers from independent experiments
+#    this excludes readout noise
 #Sg - is an array of gradients w.r.t. the parameters to be estimated.
 #  Sg.shape[0] must equal len(S)
+#dk - dark current noise level (photon units) - (thermal) dark current counts are Poisson - readout noise is not.
 #return_FIM - if True, the FIM will be returned, too
-def CRB_Poisson(S, Sg, return_FIM=False):
+def CRB_Poisson(S, Sg, dk=2.5, return_FIM=False):
     assert len(S) == Sg.shape[0]
     M = len(S); N = Sg.shape[1]
     fim = np.zeros((N,N))
     for k in range(M):
-        fim += (1. + 1./S[k])*np.outer( Sg[k,:], Sg[k,:] )
+        gg = np.outer( Sg[k,:], Sg[k,:] )
+        fim += ( 1./(S[k] + dk) )*gg
     crb = np.linalg.inv(fim)
     if not return_FIM: 
         return crb
@@ -173,7 +177,7 @@ class EFC():
             return f
         df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.    
         return (f, df)
-    
+    # see self.CostCrossFieldWithDomPenalty
     def SetupCrossOpt(self, c0, OptPixels):
         self.CrossOptimSetUp = True
         self.OptPixels = OptPixels
@@ -219,6 +223,7 @@ class EFC():
             for k in range(len(OptPixels)):
                 f[k] = fh[self.OptPixDex[k]]
 
+        #main penalty term
         re = np.real(f);  
         im = np.imag(f);
         re0 = np.real(crfield0)
@@ -229,6 +234,7 @@ class EFC():
         else:  # ReOrIm = 'Im'
              cost = - 0.5*np.sum((im-im0)**2)
 
+        # command amplitude penalty term
         wathp = np.where(a >  cmdthr)[0]
         wathm = np.where(a < -cmdthr)[0]
         cost += cmdpenamp*np.sum(  a[wathp] - cmdthr)
