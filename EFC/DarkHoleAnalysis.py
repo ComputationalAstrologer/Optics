@@ -23,6 +23,40 @@ stuff = pickle.load(open('minus10HoleWithSpeckles33x33.pickle','rb'))
 Z = stuff['EFC class'];
 Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
 
+#############################################################
+# load some optimized probe solutions and analyze the CRBs  #
+#############################################################
+from EFC import CRB_Poisson
+stuff = pickle.load(open('stuff20240626.pickle','rb'))
+A =stuff['EFCobj']; # EFC class object
+sols=stuff['solutions'];  # DM command solutions
+cost = stuff['cost'];  # cost for each solution 
+sIp = 0.003*stuff['sIp']; # sqrt (DOM intensity) for each solution (with sqrt(10^-5) polarizer)
+fyr=stuff['fyr']; fyi=stuff['fyi']; # Real and Imag CROSS field values for each solution
+
+#brightness (itensity) function and its gradient w.r.t. the cross field
+
+brt and gbrt need to be the squares of the hybrid equations
+
+brt  = lambda eyr, eyi, sIx, scale: scale*(eyr**2 + eyi**2 + 1.e-5*sIx**2) 
+gbrt = lambda eyr, eyi, sIx, scale: 2*scale*np.array([eyr, eyi])
+intens   = np.zeros((len(sols)),)
+gintens  = np.zeros((len(sols) ,2 ))
+crlb = np.zeros((len(sols),len(sols),fyi.shape[1]))
+errm = np.zeros((len(sols),len(sols)))  # matrix of error metric for pair DM solutions
+scale = 1.e14  # photons/exposure/pixel for contrast=1 source
+for k1 in range(len(sols)):
+    for k2 in np.arange(k1+1, len(sols)):
+        for k3 in range(fyi.shape[1]):  # loop over pixels
+          S = [brt(fyr[k1,k3], fyi[k1,k3],sIp[k1,k3],scale), brt(fyr[k2,k3],fyi[k2,k3],sIp[k2,k3],scale)]
+          Sg = np.zeros((len(S),2))
+          Sg[0,:] = gbrt(fyr[k1,k3], fyi[k1,k3], sIp[k1,k3],scale)
+          Sg[1,:] = gbrt(fyr[k2,k3], fyi[k2,k3], sIp[k2,k3],scale)
+          crlb[k1,k2,k3] = CRB_Poisson(S,Sg,return_FIM=False)
+        
+
+
+
 ######################################################################
 # continuous region probe experiment (assuming 10^-5 linear polarizer)
 ######################################################################
