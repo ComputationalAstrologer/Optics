@@ -42,6 +42,59 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
+#This uses the hybrid equations to calculate the intensity 
+#f - a vector with 3 complex (or real) numbers:
+#   [dominant field, cross field, sqrt(Iinc)] - these are the quantities to be estimated
+#   and the gradient is with respect to their real and image parts, as per the 'mode' kwarg
+#p - a vector with two complex numbers representing the probe field
+# [dominant probe, cross probe]
+#mode - this only changes the gradient output.
+#  choices are: 'Cross', 'Dom', 'CrossDom', 'CrossSinc','CrossDomSinc'
+#   if 'Cross' - grad includes derivs w.r.t. real and imag part of cross fields
+#      'Dom'                                                      dominant
+#      'CrossDom'                            both    dominant and cross
+#      'CrossDomSinc' -  real and imag parts of dom and cros plus the sqrt(incoherent component)
+def ProbeIntensity(f, p, mode='Cross',return_grad=True):
+    assert mode in ['Cross', 'Dom', 'CrossDom', 'CrossSinc','CrossDomSinc']
+    assert len(f) == 3
+    assert len(p) == 2
+    assert np.isreal(f[2]) # this is sqrt(Incoherent Component)
+    CC = np.conj; RE = np.real; IM = np.imag  # makes it easier to read
+    Idom = f[0]*CC(f[0]) + p[0]*CC(p[0]) + f[2]**2 - IM(p[0])*RE(f[0]) + RE(p[0])*IM(f[0]) 
+    Icro = f[1]*CC(f[1]) + p[1]*CC(p[1])            - IM(p[1])*RE(f[1]) + RE(p[1])*IM(f[1])
+    Itot = RE(Idom + Icro)
+    if not return_grad:
+        return Itot
+    if mode == 'Cross':
+        grad = np.zeros((2))
+        grad[0] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
+        grad[1] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
+    elif mode == 'Dom':
+        grad = np.zeros((2))
+        grad[0] = 2*RE(f[0]) - IM(p[0]) # deriv w.r.t Re(f[0])
+        grad[1] = 2*IM(f[0]) + RE(p[0]) # deriv w.r.t Im(f[0])
+    elif mode == 'CrossDom':
+        grad = np.zeros((4))
+        grad[0] = 2*RE(f[0]) - IM(p[0]) # deriv w.r.t Re(f[0])
+        grad[1] = 2*IM(f[0]) + RE(p[0]) # deriv w.r.t Im(f[0])
+        grad[2] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
+        grad[3] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
+    elif mode == 'CrossSinc':
+        grad = np.zeros((3))
+        grad[0] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
+        grad[1] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
+        grad[2] = 2*f[2]                # deriv w.r.t f[2] (which is real)
+    elif mode == 'CrossDomSinc':
+        grad = np.zeros((5))
+        grad[0] = 2*RE(f[0]) - IM(p[0]) # deriv w.r.t Re(f[0])
+        grad[1] = 2*IM(f[0]) + RE(p[0]) # deriv w.r.t Im(f[0])
+        grad[2] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
+        grad[3] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
+        grad[4] = 2*f[2]        
+    else: assert False
+    return (Itot, grad)
+        
+
 #This returns the Cramer-Rao bound matrrix and the Fisher Information (FIM), if desired,
 #  under the assumption that the measurements are Poisson distributed.
 #If a scalar number, S, is the expected number of counts and the actual number

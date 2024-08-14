@@ -15,7 +15,9 @@ import matplotlib.pyplot as plt
 from scipy import optimize
 import EFC
 fig = plt.figure
-MakePixList = EFC.MakePixList
+MakePixList = EFC.MakePixList;
+ProbeIntensity = EFC.ProbeIntensity
+CRB_Poisson = EFC.CRB_Poisson
 EFC = EFC.EFC  # need this to load the pickle
 
 #get EFC instance w/ dark hole command
@@ -30,30 +32,32 @@ from EFC import CRB_Poisson
 stuff = pickle.load(open('stuff20240626.pickle','rb'))
 A =stuff['EFCobj']; # EFC class object
 sols=stuff['solutions'];  # DM command solutions
-cost = stuff['cost'];  # cost for each solution 
 sIp = 0.003*stuff['sIp']; # sqrt (DOM intensity) for each solution (with sqrt(10^-5) polarizer)
-fyr=stuff['fyr']; fyi=stuff['fyi']; # Real and Imag CROSS field values for each solution
+#fyr=stuff['fyr']; fyi=stuff['fyi']; # Real and Imag CROSS field probe values for each solution
+ftdom = A.Field(Cdh,'X','Hole','phase',False)  # true dominant field
+ftcro = A.Field(Cdh,'Y','Hole','phase',False)  # true cross field
+fmdom = A.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=0.) # model field at dark hole 
+fmcro = A.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=0.)
+sInc  = 0.  # sqrt(incoherent intensity)
 
-#brightness (itensity) function and its gradient w.r.t. the cross field
-
-brt and gbrt need to be the squares of the hybrid equations
-
-brt  = lambda eyr, eyi, sIx, scale: scale*(eyr**2 + eyi**2 + 1.e-5*sIx**2) 
-gbrt = lambda eyr, eyi, sIx, scale: 2*scale*np.array([eyr, eyi])
-intens   = np.zeros((len(sols)),)
-gintens  = np.zeros((len(sols) ,2 ))
-crlb = np.zeros((len(sols),len(sols),fyi.shape[1]))
-errm = np.zeros((len(sols),len(sols)))  # matrix of error metric for pair DM solutions
-scale = 1.e14  # photons/exposure/pixel for contrast=1 source
+photons = 1.e15
+metric = np.zeros((len(sols),len(sols),len(A.HolePixels)))
 for k1 in range(len(sols)):
-    for k2 in np.arange(k1+1, len(sols)):
-        for k3 in range(fyi.shape[1]):  # loop over pixels
-          S = [brt(fyr[k1,k3], fyi[k1,k3],sIp[k1,k3],scale), brt(fyr[k2,k3],fyi[k2,k3],sIp[k2,k3],scale)]
-          Sg = np.zeros((len(S),2))
-          Sg[0,:] = gbrt(fyr[k1,k3], fyi[k1,k3], sIp[k1,k3],scale)
-          Sg[1,:] = gbrt(fyr[k2,k3], fyi[k2,k3], sIp[k2,k3],scale)
-          crlb[k1,k2,k3] = CRB_Poisson(S,Sg,return_FIM=False)
-        
+  prdom1 = A.Field(Cdh + sols[k1],'X','Hole','phase',False,SpeckleFactor=None) - fmdom  # k1 dominant probe
+  prcro1 = A.Field(Cdh + sols[k1],'Y','Hole','phase',False,SpeckleFactor=None) - fmcro
+  for k2 in np.arange(k1+1, len(sols)):
+      prdom2 = A.Field(Cdh + sols[k2],'X','Hole','phase',False,SpeckleFactor=None) - fmdom
+      prcro2 = A.Field(Cdh + sols[k2],'Y','Hole','phase',False,SpeckleFactor=None) - fmcro
+      for k3 in range(len(A.HolePixels)):  # pixel index
+          f0  = np.array( [ftdom[k3], ftcro[k3], sInc ])  # true field values
+          pr1 = np.array( [prdom1[k3], prcro1[k3] ] )  # k1 probe 
+          pr2 = np.array( [prdom2[k3], prcro2[k3] ] ) # k2 probe
+          s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
+          s1, gs1 = ProbeIntensity(f0,   pr1, 'Cross', True)
+          s2, gs2 = ProbeIntensity(f0,   pr2, 'Cross', True)
+          S = np.array([s0, s1, s2])*photons
+          Sg = np.stack( (gs0, gs1, gs2) )*photons
+          crb = CRB_Poisson(S, Sg)
 
 
 
