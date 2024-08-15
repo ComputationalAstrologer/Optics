@@ -42,6 +42,74 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
+#This returns the Cramer-Rao bound matrrix and the Fisher Information (FIM), if desired,
+#  under the assumption that the measurements are Poisson distributed.
+#If a scalar number, S, is the expected number of counts and the actual number
+#  of counts, n, is Poisson distributed denoted as P(n|S), we have <n> = s and <n^2> = S^2 + S.
+#  Let the gradient vector of S w.r.t. some parameters be gs, then 1 page of work shows that
+#  the Fisher information matrix (FIM) for one experiment is ( 1/(S + rn) )*outer_prod(gs,gs).  
+#  outer_prod(gs,gs) is a singulat matrix, which can be shown by factorization since: (aa ab; ab bb) = (a 0; 0 b)(a b; a b)  
+#Note that the FIMs of independent experiments add. 
+#Then, Cramer-Rao bound is given by inv (FIM)
+#S - is a vector (or list) of expected count numbers from independent experiments
+#    this excludes readout noise
+#Sg - is an array of gradients w.r.t. the parameters to be estimated.
+#  Sg.shape[0] must equal len(S)
+#dk - dark current noise level (photon units) - (thermal) dark current counts are Poisson - readout noise is not.
+#return_FIM - if True, the FIM will be returned, too
+def CRB_Poisson(S, Sg, dk=2.5, return_FIM=False):
+    assert len(S) == Sg.shape[0]
+    M = len(S); N = Sg.shape[1]
+    fim = np.zeros((N,N))
+    for k in range(M):
+        gg = np.outer( Sg[k,:], Sg[k,:] )
+        fim += ( 1./(S[k] + dk) )*gg
+    crb = np.linalg.inv(fim)
+    if not return_FIM: 
+        return crb
+    else:
+        return (crb, fim)
+
+#This calculates the -1*(log likelihood) under a poisson distribution
+#   Note that the Ncnt! term is not included
+#Ncnt - a list (or array) of count values (measurements)
+#I - a list (or array) of intensity values (units are counts, but need not be integer valued.)
+#    I is the response variable.
+#    note len(I) must equal len(Ncnt)
+#Ig  - optional list (not array!) of intensity gradients. If provided the gradient will be output
+#Igg - optional list (not array!) of intensity hessians.  If provided, the hessian will be output.
+#      requires gradient to be provided.
+def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
+    M = len(Ncnt)  # M is the number of "measurements"
+    if len(I) != M:
+        print("Input counts (M) and the number of intensity values do not match.")
+        assert False
+    if Ig is not None:
+        assert len(Ig) == M        
+    if Igg is not None:
+        assert Ig is not None
+        assert len(Igg) == M
+    negll = 0.  #negative log-likelihood value
+    negllg = 0.
+    negllgg = 0.
+    for m in range(M): #fist calculate LL, LLg, LLgg and then multiply by -1 when done
+        s = Ncnt[m]*np.log(I[m]) - I[m]
+        negll -= s
+        if Ig is not None:
+            dlnPds = Ncnt[m]/I[m] - 1.
+            sg = dlnPds*Ig[m]
+            negllg -= sg
+            if Igg is not None:        
+                d2lnPds2 = -1.*Ncnt[m]/(I[m]**2)
+                sgg = d2lnPds2*np.outer(Ig[m],Ig[m]) + dlnPds*Igg[m] 
+                negllgg -= sgg
+    if Igg is not None:
+        return (negll, negllg, negllgg)
+    if Ig is not None:
+        return (negll, negllg)
+    return negll
+
+
 #This uses the hybrid equations to calculate the intensity 
 #f - a vector with 3 complex (or real) numbers:
 #   [dominant field, cross field, sqrt(Iinc)] - these are the quantities to be estimated
@@ -93,37 +161,6 @@ def ProbeIntensity(f, p, mode='Cross',return_grad=True):
         grad[4] = 2*f[2]        
     else: assert False
     return (Itot, grad)
-        
-
-#This returns the Cramer-Rao bound matrrix and the Fisher Information (FIM), if desired,
-#  under the assumption that the measurements are Poisson distributed.
-#If a scalar number, S, is the expected number of counts and the actual number
-#  of counts, n, is Poisson distributed denoted as P(n|S), we have <n> = s and <n^2> = S^2 + S.
-#  Let the gradient vector of S w.r.t. some parameters be gs, then 1 page of work shows that
-#  the Fisher information matrix (FIM) for one experiment is ( 1/(S + rn) )*outer_prod(gs,gs).  
-#  outer_prod(gs,gs) is a singulat matrix, which can be shown by factorization since: (aa ab; ab bb) = (a 0; 0 b)(a b; a b)  
-#Note that the FIMs of independent experiments add. 
-#Then, Cramer-Rao bound is given by inv (FIM)
-#S - is a vector (or list) of expected count numbers from independent experiments
-#    this excludes readout noise
-#Sg - is an array of gradients w.r.t. the parameters to be estimated.
-#  Sg.shape[0] must equal len(S)
-#dk - dark current noise level (photon units) - (thermal) dark current counts are Poisson - readout noise is not.
-#return_FIM - if True, the FIM will be returned, too
-def CRB_Poisson(S, Sg, dk=2.5, return_FIM=False):
-    assert len(S) == Sg.shape[0]
-    M = len(S); N = Sg.shape[1]
-    fim = np.zeros((N,N))
-    for k in range(M):
-        gg = np.outer( Sg[k,:], Sg[k,:] )
-        fim += ( 1./(S[k] + dk) )*gg
-    crb = np.linalg.inv(fim)
-    if not return_FIM: 
-        return crb
-    else:
-        return (crb, fim)
-    
-
 
 #===============================================================================
 #                      EFC Class starts here
