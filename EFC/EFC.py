@@ -111,8 +111,8 @@ def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
 
 
 #This uses the hybrid equations to calculate the intensity 
-#f - a vector with 3 complex (or real) numbers:
-#   [dominant field, cross field, sqrt(Iinc)] - these are the quantities to be estimated
+#f - a vector with 2 complex numbers:
+#   [dominant field, cross field] - these are the quantities to be estimated
 #   and the gradient is with respect to their real and image parts, as per the 'mode' kwarg
 #p - a vector with two complex numbers representing the probe field
 # [dominant probe, cross probe]
@@ -121,10 +121,10 @@ def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
 #   if 'Cross' - grad includes derivs w.r.t. real and imag part of cross fields
 #      'Dom'                                                      dominant
 #      'CrossDom'                            both    dominant and cross
-#      'CrossDomSinc' -  real and imag parts of dom and cros plus the sqrt(incoherent component)
-def ProbeIntensity(f, p, mode='Cross',return_grad=True):
+def ProbeIntensity(f, p, mode='Cross',return_grad=True,return_hess=False):
+    if return_hess: assert return_grad
     assert mode in ['Cross', 'Dom', 'CrossDom', 'CrossSinc','CrossDomSinc']
-    assert len(f) == 3
+    assert len(f) == 2
     assert len(p) == 2
     assert np.isreal(f[2]) # this is sqrt(Incoherent Component)
     CC = np.conj; RE = np.real; IM = np.imag  # makes it easier to read
@@ -137,22 +137,27 @@ def ProbeIntensity(f, p, mode='Cross',return_grad=True):
         grad = np.zeros((2))
         grad[0] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
         grad[1] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
+        hess = 2.*np.eye(2,2)
     elif mode == 'Dom':
         grad = np.zeros((2))
         grad[0] = 2*RE(f[0]) - IM(p[0]) # deriv w.r.t Re(f[0])
         grad[1] = 2*IM(f[0]) + RE(p[0]) # deriv w.r.t Im(f[0])
+        hess = 2.*np.eye(2,2)
     elif mode == 'CrossDom':
         grad = np.zeros((4))
         grad[0] = 2*RE(f[0]) - IM(p[0]) # deriv w.r.t Re(f[0])
         grad[1] = 2*IM(f[0]) + RE(p[0]) # deriv w.r.t Im(f[0])
         grad[2] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
         grad[3] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
+        hess = 2.*np.eye(4,4)
     elif mode == 'CrossSinc':
+        assert False
         grad = np.zeros((3))
         grad[0] = 2*RE(f[1]) - IM(p[1]) # deriv w.r.t. Re(f[1])
         grad[1] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
         grad[2] = 2*f[2]                # deriv w.r.t f[2] (which is real)
     elif mode == 'CrossDomSinc':
+        assert False
         grad = np.zeros((5))
         grad[0] = 2*RE(f[0]) - IM(p[0]) # deriv w.r.t Re(f[0])
         grad[1] = 2*IM(f[0]) + RE(p[0]) # deriv w.r.t Im(f[0])
@@ -160,7 +165,46 @@ def ProbeIntensity(f, p, mode='Cross',return_grad=True):
         grad[3] = 2*IM(f[1]) + RE(p[1]) # deriv w.r.t. Im(f[1])
         grad[4] = 2*f[2]        
     else: assert False
-    return (Itot, grad)
+    if not return_hess: 
+        return (Itot, grad)
+    else: return (Itot,grad,hess)
+
+
+#This performs local optimization with a series of starting points for |f| and its phase
+#Imeas is one series of probe measurements.
+# assumes 0th probe is 0, which provides un upper limit on |f|
+# this returns x in the regression space
+def GridSearchOptimize(Imeas):  
+    assert False   # maintenance required
+    fun = WrapperNegllPoisson
+    funH = WrapperNegllPoissonHess
+    magmax = np.sqrt(Imeas[0] + 2*np.sqrt(Imeas[0]))
+    mag = magmax*np.logspace(-4,0,6,base=2)
+    phase  = np.linspace(0, 2*np.pi*(9-1)/9, 9)
+    funval = np.zeros((len(mag),len(phase)))
+    xvals = np.zeros((len(mag), len(phase), 3))
+    ops = {'disp':False, 'maxiter': 50}
+    for km in range(len(mag)):  # loop over |f|
+        for kp in range(len(phase)):  # loop over phase(f)
+            mg = mag[km]
+            ph = phase[kp]
+            x = np.zeros((3,))
+            Iinc = Imeas[0] - mg**2
+            if IncModel == 'sqrt':
+                x[0] = np.sqrt(np.abs(Iinc))
+            elif IncModel == 'log':
+                x[0] = np.log(np.abs(Iinc))
+            else: assert False
+            f = mg*np.exp(1j*ph)
+            x[1] = np.real(f)
+            x[2] = np.imag(f)
+            #if km == 0 and kp == 0: x = xPhys2xReg(xtruephys)  # see what happens if we put in the solution 
+            result = minimize(fun,x,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
+            funval[km,kp] = result['fun']
+            xvals[km,kp,:] = result['x']
+    bestindex = np.unravel_index(np.argmin(funval),funval.shape)
+    return(xvals[bestindex[0],bestindex[1],:])
+
 
 #===============================================================================
 #                      EFC Class starts here

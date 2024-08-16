@@ -22,45 +22,8 @@ For equal total exposure time, nonlinear estimation without pairwise probes
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
+from EFC import NegLLPoisson
 
-#This calculates the -1*(log likelihood) under a poisson distribution
-#   Note that the Ncnt! term is not included
-#Ncnt - a list (or array) of count values (measurements)
-#I - a list (or array) of intensity values (units are counts, but need not be integer valued.)
-#    I is the response variable.
-#    note len(I) must equal len(Ncnt)
-#Ig  - optional list (not array!) of intensity gradients. If provided the gradient will be output
-#Igg - optional list (not array!) of intensity hessians.  If provided, the hessian will be output.
-#      requires gradient to be provided.
-def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
-    M = len(Ncnt)  # M is the number of "measurements"
-    if len(I) != M:
-        print("Input counts (M) and the number of intensity values do not match.")
-        assert False
-    if Ig is not None:
-        assert len(Ig) == M        
-    if Igg is not None:
-        assert Ig is not None
-        assert len(Igg) == M
-    negll = 0.  #negative log-likelihood value
-    negllg = 0.
-    negllgg = 0.
-    for m in range(M): #fist calculate LL, LLg, LLgg and then multiply by -1 when done
-        s = Ncnt[m]*np.log(I[m]) - I[m]
-        negll -= s
-        if Ig is not None:
-            dlnPds = Ncnt[m]/I[m] - 1.
-            sg = dlnPds*Ig[m]
-            negllg -= sg
-            if Igg is not None:        
-                d2lnPds2 = -1.*Ncnt[m]/(I[m]**2)
-                sgg = d2lnPds2*np.outer(Ig[m],Ig[m]) + dlnPds*Igg[m] 
-                negllgg -= sgg
-    if Igg is not None:
-        return (negll, negllg, negllgg)
-    if Ig is not None:
-        return (negll, negllg)
-    return negll
 
 #This produces the intensity in units of photons at a single pixel
 # x is the state vector
@@ -225,39 +188,6 @@ def MonteCarloRun(Ntrials=1000, IncModel='sqrt', Estimator='Nonlin'):
         result = minimize(fun,x0,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
         return result['x']
 
-    #This performs local optimization with a series of starting points for |f| and its phase
-    #Imeas is one series of probe measurements.
-    # assumes 0th probe is 0, which provides un upper limit on |f|
-    # this returns x in the regression space
-    def GridSearchOptimize(Imeas):  
-        fun = WrapperNegllPoisson
-        funH = WrapperNegllPoissonHess
-        magmax = np.sqrt(Imeas[0] + 2*np.sqrt(Imeas[0]))
-        mag = magmax*np.logspace(-4,0,6,base=2)
-        phase  = np.linspace(0, 2*np.pi*(9-1)/9, 9)
-        funval = np.zeros((len(mag),len(phase)))
-        xvals = np.zeros((len(mag), len(phase), 3))
-        ops = {'disp':False, 'maxiter': 50}
-        for km in range(len(mag)):  # loop over |f|
-            for kp in range(len(phase)):  # loop over phase(f)
-                mg = mag[km]
-                ph = phase[kp]
-                x = np.zeros((3,))
-                Iinc = Imeas[0] - mg**2
-                if IncModel == 'sqrt':
-                    x[0] = np.sqrt(np.abs(Iinc))
-                elif IncModel == 'log':
-                    x[0] = np.log(np.abs(Iinc))
-                else: assert False
-                f = mg*np.exp(1j*ph)
-                x[1] = np.real(f)
-                x[2] = np.imag(f)
-                #if km == 0 and kp == 0: x = xPhys2xReg(xtruephys)  # see what happens if we put in the solution 
-                result = minimize(fun,x,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
-                funval[km,kp] = result['fun']
-                xvals[km,kp,:] = result['x']
-        bestindex = np.unravel_index(np.argmin(funval),funval.shape)
-        return(xvals[bestindex[0],bestindex[1],:])
 
     #The Monte Carlo loop is done here
     Itrue = Intensity(xPhys2xReg(xtruephys),probes,False,False,IncModel=IncModel)
