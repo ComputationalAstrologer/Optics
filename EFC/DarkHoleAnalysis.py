@@ -17,6 +17,7 @@ import EFC
 fig = plt.figure
 MakePixList = EFC.MakePixList;
 ProbeIntensity = EFC.ProbeIntensity
+NegLLPoisson = EFC.NegLLPoisson
 CRB_Poisson = EFC.CRB_Poisson
 EFC = EFC.EFC  # need this to load the pickle
 
@@ -77,7 +78,7 @@ for k1 in range(len(sols)):
       prcro2 = A.Field(Cdh + sols[k2],'Y','Hole','phase',False,SpeckleFactor=None) - fmcro
       pk = np.zeros((len(A.HolePixels)))
       for k3 in range(len(A.HolePixels)):  # pixel index
-          f0  = np.array( [ftdom[k3], ftcro[k3], sInc ])  # true field values
+          f0  = np.array( [ftdom[k3], ftcro[k3]])  # true field values
           pr1 = np.array( [prdom1[k3], prcro1[k3] ] )  # k1 probe 
           pr2 = np.array( [prdom2[k3], prcro2[k3] ] ) # k2 probe
           s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
@@ -117,7 +118,7 @@ for k in range(len(A.HolePixels)):
     sphx[k] = Z.spx[A.HolePixels[k]]  # dom speckles
     sphy[k] = Z.spy[A.HolePixels[k]]  # cross speckles
 
-f0x = Z.Field(Cdh,'X','Hole','phase',False,None)  # unknown dom field
+f0x = Z.Field(Cdh,'X','Hole','phase',False,None)  # known dom field
 f0y = Z.Field(Cdh,'Y','Hole','phase',False,None)  # unknown cross field
 fAhx0 = A.Field(Cdh,'X','Hole','phase',False,None);  # model field
 fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,None);  # model field
@@ -127,16 +128,26 @@ px2 = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
 py1 = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
 py2 = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 
-photons = 1.e15; ifc = extfac**2
+photons = 1.e15; sqphots = np.sqrt(photons);
 S = np.zeros((len(A.HolePixels),2))  # array of true intensities
+g0 = np.zeros(())  # real and imag parts of estimated cross fields
 U = 1.0*S  # array of measured intensities
 for k in range(len(A.HolePixels)):
-    S[k,0] = ifc*CSQ(f0x[k] + px1[k]) + CSQ(f0y[k] + py1[k])
-    S[k,1] = ifc*CSQ(f0x[k] + px2[k]) + CSQ(f0y[k] + py2[k])
+    S[k,0], gSk0 = ProbeIntensity([extfac*sqphots*f0x[k], sqphots*f0y[k]],  # true dom intensity
+                                  [extfac*sqphots*px1[k], sqphots*py1[k]], 'Cross', True)
+    S[k,1], gsk1 = ProbeIntensity([extfac*sqphots*f0x[k], sqphots*f0y[k]],  # true cross intensity
+                                  [extfac*sqphots*px2[k], sqphots*py2[k]], 'Cross', True)
     U[k,0] = np.random.poisson(2 + photons*S[k,0])
     U[k,1] = np.random.poisson(2 + photons*S[k,1])
 
-
+    #Perform estimation of a = [ Re(f0y), Im(f0y) ]
+    #This is a cost fcn to be optimized
+    def CostNegllPoisson(a, Ncnt):
+      I1, gI1 = ProbeIntensity( [extfac*sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [extfac*sqphots*px1[k], sqphots*py1[k]],'CrossDom', True)
+      I2, gI2 = ProbeIntensity( [extfac*sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [extfac*sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
+      gI1 = gI1[2:,2:]; gI2 = gI2[2:,2:]
+      c, cg = NegLLPoisson( [U[k,0], U[k,1]], [I1, I2],Ig=[gI1, gI2] )
+      return (c, cg)
 
 #############################################################
 #       plots for the DM commands sol1 and sol2             #
