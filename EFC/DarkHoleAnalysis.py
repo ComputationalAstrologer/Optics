@@ -142,12 +142,32 @@ for k in range(len(A.HolePixels)):
 
     #Perform estimation of a = [ Re(f0y), Im(f0y) ]
     #This is a cost fcn to be optimized
-    def CostNegllPoisson(a, Ncnt):
+    def CostNegLLPoisson(a, Ncnt):
       I1, gI1 = ProbeIntensity( [extfac*sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [extfac*sqphots*px1[k], sqphots*py1[k]],'CrossDom', True)
       I2, gI2 = ProbeIntensity( [extfac*sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [extfac*sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
-      gI1 = gI1[2:,2:]; gI2 = gI2[2:,2:]
+      gI1 = gI1[2:]; gI2 = gI2[2:]
       c, cg = NegLLPoisson( [U[k,0], U[k,1]], [I1, I2],Ig=[gI1, gI2] )
       return (c, cg)
+    #this performs a local minimization at each grid point
+    def GridSearchMin(I1,I2):  
+        om = optimize.minimize
+        fun = CostNegLLPoisson
+        amps = min((np.sqrt(I1),np.sqrt(I2)))*np.array([.01,.1,.4,.7,.95])
+        angs = np.linspace(0, 7*2*np.pi/8,8)
+        nm = len(amps); ng = len(angs)
+        cost = [] 
+        sols = []
+        for km in range(nm):
+            for kg in range(ng):
+                phasor = amps[km]*np.exp(1j*angs[kg]);
+                a0 = np.array([np.real(phasor), np.imag(phasor)])
+                out = om(fun,a0,args=([I1,I2],),method='CG',jac=True,options={'maxiter':20})
+                cost.append(out['fun'])
+                sols.append(out['x'])
+        cost = np.array(cost); sols = np.array(sols)
+        sol = sols[np.argmin(cost)]
+        solcost = cost[np.argmin(cost)]
+        return (sol, solcost)
 
 #############################################################
 #       plots for the DM commands sol1 and sol2             #
