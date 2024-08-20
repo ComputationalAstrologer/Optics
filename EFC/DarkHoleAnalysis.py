@@ -118,12 +118,11 @@ for k in range(len(A.HolePixels)):
     sphx[k] = Z.spx[A.HolePixels[k]]  # dom speckles
     sphy[k] = Z.spy[A.HolePixels[k]]  # cross speckles
 
-f0x = Z.Field(Cdh,'X','Hole','phase',False,None)  # known dom field
-f0x *= extfact  #accounts for linear polarizer
-f0y = Z.Field(Cdh,'Y','Hole','phase',False,None)  # unknown cross field
-fAhx0 = A.Field(Cdh,'X','Hole','phase',False,None);  # model field
-fAhx0 *= extfac
-fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,None);  # model field
+f0x = A.Field(Cdh,'X','Hole','phase',False,None)  # known dom field
+f0x *= extfac  #accounts for linear polarizer
+f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # unknown cross field
+fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.);  # model field
+fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);  # model field
 pm = 1  #positive probes
 px1  = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
 px1 *= extfac
@@ -139,8 +138,9 @@ px2n *= extfac
 py1n = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
 py2n = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 
-S = np.zeros((len(A.HolePixels),2))  # array of true intensities
-g0 = np.zeros(())  # real and imag parts of estimated cross fields
+S =   np.zeros((len(A.HolePixels),2))  # array of true intensities
+g0l = np.zeros((len(A.HolePixels), )).astype('complex')  # linearly estimated cross fields
+g0n = np.zeros((len(A.HolePixels), )).astype('complex')  # nonlinearly estimated cross fields
 U = 1.0*S  # array of measured intensities
 for k in range(len(A.HolePixels)):
     S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  # true dom intensity
@@ -157,29 +157,32 @@ for k in range(len(A.HolePixels)):
       I2, gI2 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
       gI1 = gI1[2:]; gI2 = gI2[2:]  # only need the last two components of the gradient output
       c, cg = NegLLPoisson( [U[k,0], U[k,1]], [I1, I2],Ig=[gI1, gI2] )
+      cg *= sqphots   # the gradient is w.r.t. the field in sqrt(photons) units
       return (c, cg)
     #this performs a local minimization at each grid point
     def GridSearchMin():
         om = optimize.minimize
         fun = CostNegLLPoisson
-        amps = min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1,.5,.95])
-        angs = np.linspace(0, 2*np.pi*(7/8), 8)
+        #amps = min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1,.5,.95])
+        #angs = np.linspace(0, 2*np.pi*(7/8), 8)
+        amps = [np.abs(f0y[k])]; angs = [np.angle(f0y[k])]
         nm = len(amps); ng = len(angs)
         cost = [] 
         sols = []
         for km in range(nm):
             for kg in range(ng):
-                phasor = amps[km]*np.exp(1j*angs[kg]);
-                a0 = np.array([np.real(phasor), np.imag(phasor)])
-                out = om(fun,a0,args=([U[k,0],U[k,1]],),method='CG',jac=True,options={'maxiter':90})
+                start = amps[km]*np.exp(1j*angs[kg]);
+                a0 = np.array([np.real(start), np.imag(start)])
+                out = om(fun,a0,args=(),method='CG',jac=True,options={'maxiter':90})
                 cost.append(out['fun'])
                 sols.append(out['x'])
         cost = np.array(cost); sols = np.array(sols)
         sol = sols[np.argmin(cost)]
         solcost = cost[np.argmin(cost)]
-        return (sol, solcost)
+        return (sol[0] + 1j*sol[1], solcost)
     def LinearEstimator():  
-        sqp = sqphots/1.41421;  a = [ np.real(f0y[k]) , np.imag(f0y[k]) ]
+        sqp = sqphots/1.41421;  # this splits the exposure time between + and - probes
+        a = [ np.real(f0y[k]) , np.imag(f0y[k]) ]
         I1p = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1[ k], sqp*py1[ k]],'Cross', False)
         I2p = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2[ k], sqp*py2[ k]],'Cross', False)
         I1n = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1n[k], sqp*py1n[k]],'Cross', False)
@@ -187,11 +190,14 @@ for k in range(len(A.HolePixels)):
         U1p = np.random.poisson(2 + I1p) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1[ k], sqp*py1[ k]],'Cross', False, IdomOnly=True)
         U1n = np.random.poisson(2 + I1n) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1n[k], sqp*py1n[k]],'Cross', False, IdomOnly=True)
         U2p = np.random.poisson(2 + I2p) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2[ k], sqp*py2[ k]],'Cross', False, IdomOnly=True)
-        U2n = np.random.poisson(2 + I2n) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2n[k], sqp*py2n[k]],'Cross', False, IdomONly=True)
-        q1 = (U1p - U1n)/2
-        q2 = (U2p - U2n)/2
-        
-        return None
+        U2n = np.random.poisson(2 + I2n) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2n[k], sqp*py2n[k]],'Cross', False, IdomOnly=True)
+        q = np.array([(U1p - U1n), (U2p - U2n)])/2
+        M = photons*np.array([[ - np.imag(py1[k]), np.real(py1[k])],[-np.imag(py2[k]), np.real(py2[k])]])
+        fyhreim = np.linalg.pinv(M).dot(q)  # estimate
+        return(fyhreim[0] + 1j*fyhreim[1])  # phasor for estimated cross field
+
+    g0n[k] = GridSearchMin()[0]
+    g0l[k] = LinearEstimator()
 
 #############################################################
 #       plots for the DM commands sol1 and sol2             #
