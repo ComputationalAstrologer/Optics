@@ -26,8 +26,6 @@ with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep: stuff = pickle.l
 Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
 #Z = stuff['EFC class'];
 
-extfac = np.sqrt(1.e-5) # linear polarizer (amplitude) extinction factor
-
 ######################################################################
 # optimization to find good probes (assuming 10^-5 linear polarizer)
 ######################################################################
@@ -98,6 +96,8 @@ sol1 = sols[k1k2[b][0]]; sol2 = sols[k1k2[b][1]]  # best solution
 # load pickle containing the two best probes and do some tests  #
 #################################################################
 
+photons = 1.e13; sqphots = np.sqrt(photons);
+extfac = np.sqrt(1.e-5) # linear polarizer (amplitude) extinction factor
 CSQ = lambda a: np.real( a*np.conj(a) )
 
 with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep:
@@ -119,41 +119,51 @@ for k in range(len(A.HolePixels)):
     sphy[k] = Z.spy[A.HolePixels[k]]  # cross speckles
 
 f0x = Z.Field(Cdh,'X','Hole','phase',False,None)  # known dom field
+f0x *= extfact  #accounts for linear polarizer
 f0y = Z.Field(Cdh,'Y','Hole','phase',False,None)  # unknown cross field
 fAhx0 = A.Field(Cdh,'X','Hole','phase',False,None);  # model field
+fAhx0 *= extfac
 fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,None);  # model field
-pm = 1
-px1 = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
-px2 = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
-py1 = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
+pm = 1  #positive probes
+px1  = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
+px1 *= extfac
+px2  = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
+px2 *= extfac
+py1  = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
 py2 = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
+pm = -1  #negative probes
+px1n = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
+px1n *= extfac
+px2n = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
+px2n *= extfac
+py1n = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
+py2n = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 
-photons = 1.e15; sqphots = np.sqrt(photons);
 S = np.zeros((len(A.HolePixels),2))  # array of true intensities
 g0 = np.zeros(())  # real and imag parts of estimated cross fields
 U = 1.0*S  # array of measured intensities
 for k in range(len(A.HolePixels)):
-    S[k,0], gSk0 = ProbeIntensity([extfac*sqphots*f0x[k], sqphots*f0y[k]],  # true dom intensity
-                                  [extfac*sqphots*px1[k], sqphots*py1[k]], 'Cross', True)
-    S[k,1], gsk1 = ProbeIntensity([extfac*sqphots*f0x[k], sqphots*f0y[k]],  # true cross intensity
-                                  [extfac*sqphots*px2[k], sqphots*py2[k]], 'Cross', True)
-    U[k,0] = np.random.poisson(2 + photons*S[k,0])
-    U[k,1] = np.random.poisson(2 + photons*S[k,1])
+    S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  # true dom intensity
+                                  [sqphots*px1[k], sqphots*py1[k]], 'Cross', True)
+    S[k,1], gsk1 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  # true cross intensity
+                                  [sqphots*px2[k], sqphots*py2[k]], 'Cross', True)
+    U[k,0] = np.random.poisson(2 + S[k,0])  #measured intensity for probe 1 - the constant is for dark counts
+    U[k,1] = np.random.poisson(2 + S[k,1])  #measured intensity for probe 2
 
     #Perform estimation of a = [ Re(f0y), Im(f0y) ]
     #This is a cost fcn to be optimized
-    def CostNegLLPoisson(a, Ncnt):
-      I1, gI1 = ProbeIntensity( [extfac*sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [extfac*sqphots*px1[k], sqphots*py1[k]],'CrossDom', True)
-      I2, gI2 = ProbeIntensity( [extfac*sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [extfac*sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
-      gI1 = gI1[2:]; gI2 = gI2[2:]
+    def CostNegLLPoisson(a):
+      I1, gI1 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px1[k], sqphots*py1[k]],'CrossDom', True)
+      I2, gI2 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
+      gI1 = gI1[2:]; gI2 = gI2[2:]  # only need the last two components of the gradient output
       c, cg = NegLLPoisson( [U[k,0], U[k,1]], [I1, I2],Ig=[gI1, gI2] )
       return (c, cg)
     #this performs a local minimization at each grid point
-    def GridSearchMin(I1,I2):  
+    def GridSearchMin():
         om = optimize.minimize
         fun = CostNegLLPoisson
-        amps = min((np.sqrt(I1),np.sqrt(I2)))*np.array([.01,.1,.4,.7,.95])
-        angs = np.linspace(0, 7*2*np.pi/8,8)
+        amps = min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1,.5,.95])
+        angs = np.linspace(0, 2*np.pi*(7/8), 8)
         nm = len(amps); ng = len(angs)
         cost = [] 
         sols = []
@@ -161,13 +171,27 @@ for k in range(len(A.HolePixels)):
             for kg in range(ng):
                 phasor = amps[km]*np.exp(1j*angs[kg]);
                 a0 = np.array([np.real(phasor), np.imag(phasor)])
-                out = om(fun,a0,args=([I1,I2],),method='CG',jac=True,options={'maxiter':20})
+                out = om(fun,a0,args=([U[k,0],U[k,1]],),method='CG',jac=True,options={'maxiter':90})
                 cost.append(out['fun'])
                 sols.append(out['x'])
         cost = np.array(cost); sols = np.array(sols)
         sol = sols[np.argmin(cost)]
         solcost = cost[np.argmin(cost)]
         return (sol, solcost)
+    def LinearEstimator():  
+        sqp = sqphots/1.41421;  a = [ np.real(f0y[k]) , np.imag(f0y[k]) ]
+        I1p = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1[ k], sqp*py1[ k]],'Cross', False)
+        I2p = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2[ k], sqp*py2[ k]],'Cross', False)
+        I1n = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1n[k], sqp*py1n[k]],'Cross', False)
+        I2n = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2n[k], sqp*py2n[k]],'Cross', False)
+        U1p = np.random.poisson(2 + I1p) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1[ k], sqp*py1[ k]],'Cross', False, IdomOnly=True)
+        U1n = np.random.poisson(2 + I1n) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1n[k], sqp*py1n[k]],'Cross', False, IdomOnly=True)
+        U2p = np.random.poisson(2 + I2p) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2[ k], sqp*py2[ k]],'Cross', False, IdomOnly=True)
+        U2n = np.random.poisson(2 + I2n) - ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px2n[k], sqp*py2n[k]],'Cross', False, IdomONly=True)
+        q1 = (U1p - U1n)/2
+        q2 = (U2p - U2n)/2
+        
+        return None
 
 #############################################################
 #       plots for the DM commands sol1 and sol2             #

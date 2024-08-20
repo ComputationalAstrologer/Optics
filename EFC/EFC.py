@@ -121,16 +121,20 @@ def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
 #   if 'Cross' - grad includes derivs w.r.t. real and imag part of cross fields
 #      'Dom'                                                      dominant
 #      'CrossDom'                            both    dominant and cross
-def ProbeIntensity(f, p, mode='Cross',return_grad=True,return_hess=False):
+#IdomOnly - only return dominant intensity.  gradient not available
+def ProbeIntensity(f, p, mode='Cross', return_grad=True, return_hess=False,
+                   IdomOnly=False):
     if return_hess: assert return_grad
     assert mode in ['Cross', 'Dom', 'CrossDom', 'CrossSinc','CrossDomSinc']
     assert len(f) == 2
     assert len(p) == 2
-    assert np.isreal(f[2]) # this is sqrt(Incoherent Component)
     CC = np.conj; RE = np.real; IM = np.imag  # makes it easier to read
-    Idom = f[0]*CC(f[0]) + p[0]*CC(p[0]) + f[2]**2 - IM(p[0])*RE(f[0]) + RE(p[0])*IM(f[0]) 
-    Icro = f[1]*CC(f[1]) + p[1]*CC(p[1])            - IM(p[1])*RE(f[1]) + RE(p[1])*IM(f[1])
+    Idom = f[0]*CC(f[0]) + p[0]*CC(p[0]) - IM(p[0])*RE(f[0]) + RE(p[0])*IM(f[0]) 
+    Icro = f[1]*CC(f[1]) + p[1]*CC(p[1]) - IM(p[1])*RE(f[1]) + RE(p[1])*IM(f[1])
     Itot = RE(Idom + Icro)
+    if IdomOnly:
+        assert return_grad is False
+        return Idom
     if not return_grad:
         return Itot
     if mode == 'Cross':
