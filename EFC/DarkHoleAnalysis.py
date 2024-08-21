@@ -111,24 +111,18 @@ with open('TwoDMsolutions.pickle','rb') as filep:  # these are probe solutions f
     stuff = pickle.load(filep)
 sol1 = stuff['solution1']; sol2 = stuff['solution2'];  del stuff
 
-#get the speckle fields from Z corresponding to the dark hole in A
-sphx = np.zeros((len(A.HolePixels),)).astype('complex')
-sphy = np.zeros((len(A.HolePixels),)).astype('complex')
-for k in range(len(A.HolePixels)):
-    sphx[k] = Z.spx[A.HolePixels[k]]  # dom speckles
-    sphy[k] = Z.spy[A.HolePixels[k]]  # cross speckles
 
-f0x = A.Field(Cdh,'X','Hole','phase',False,None)  # known dom field
+f0x = A.Field(Cdh,'X','Hole','phase',False,None)  # dom field with speckles
 f0x *= extfac  #accounts for linear polarizer
-f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # unknown cross field
-fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.);  # model field
-fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);  # model field
+f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # cross field with speckles
+fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.)  # model field (no speckles)
+fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.)  # model field (no speckles)
 pm = 1  #positive probes
 px1  = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
 px1 *= extfac
 px2  = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
 px2 *= extfac
-py1  = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
+py1 = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
 py2 = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 pm = -1  #negative probes
 px1n = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
@@ -138,6 +132,7 @@ px2n *= extfac
 py1n = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
 py2n = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 
+argmin = []
 S =   np.zeros((len(A.HolePixels),2))  # array of true intensities
 g0l = np.zeros((len(A.HolePixels), )).astype('complex')  # linearly estimated cross fields
 g0n = np.zeros((len(A.HolePixels), )).astype('complex')  # nonlinearly estimated cross fields
@@ -163,9 +158,10 @@ for k in range(len(A.HolePixels)):
     def GridSearchMin():
         om = optimize.minimize
         fun = CostNegLLPoisson
-        #amps = min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1,.5,.95])
-        #angs = np.linspace(0, 2*np.pi*(7/8), 8)
-        amps = [np.abs(f0y[k])]; angs = [np.angle(f0y[k])]
+        amps = list(min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1, 0.5, .7,.95]))
+        angs = list(np.linspace(0, 2*np.pi*(15/16), 16))
+        amps.append(np.abs(f0y[k]))  # append the true answer
+        angs.append(np.angle(f0y[k]))
         nm = len(amps); ng = len(angs)
         cost = [] 
         sols = []
@@ -179,6 +175,9 @@ for k in range(len(A.HolePixels)):
         cost = np.array(cost); sols = np.array(sols)
         sol = sols[np.argmin(cost)]
         solcost = cost[np.argmin(cost)]
+        
+        argmin.append(np.argmin(cost))
+        
         return (sol[0] + 1j*sol[1], solcost)
     def LinearEstimator():  
         sqp = sqphots/1.41421;  # this splits the exposure time between + and - probes
@@ -197,7 +196,7 @@ for k in range(len(A.HolePixels)):
         return(fyhreim[0] + 1j*fyhreim[1])  # phasor for estimated cross field
 
     g0n[k] = GridSearchMin()[0]
-    g0l[k] = LinearEstimator()
+    #g0l[k] = LinearEstimator()
 
 #############################################################
 #       plots for the DM commands sol1 and sol2             #
