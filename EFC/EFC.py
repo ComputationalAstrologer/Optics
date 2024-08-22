@@ -346,7 +346,7 @@ class EFC():
     #pScale - multiplier applied to dominant intensity penalty above 'intthr'
     def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, OptPixels=None, ReOrIm='Re', intthr=1.e-7, pScale=1.e-3): 
         scale = 1.e9  # this helps some of the optimizers
-        cmdthr = 0.15; # command amplitude limit (radians) - designed to be the valid range of the linear approx to exp(1j*x)
+        cmdthr = np.pi/4; # command amplitude limit (radians) - when small it corresponds to the linear approx to exp(1j*x);  too large it may strain the validity of the hybrid equations
         cmdpenamp = 1.e9  # command amplitude penalty scale 
         assert ReOrIm in ['Re','Im']
         if (self.CrossOptimSetUp is False) or (OptPixels != self.OptPixels): 
