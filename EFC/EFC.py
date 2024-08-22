@@ -174,42 +174,6 @@ def ProbeIntensity(f, p, mode='Cross', return_grad=True, return_hess=False,
     else: return (Itot,grad,hess)
 
 
-#This performs local optimization with a series of starting points for |f| and its phase
-#Imeas is one series of probe measurements.
-# assumes 0th probe is 0, which provides un upper limit on |f|
-# this returns x in the regression space
-def GridSearchOptimize(Imeas):  
-    assert False   # maintenance required
-    fun = WrapperNegllPoisson
-    funH = WrapperNegllPoissonHess
-    magmax = np.sqrt(Imeas[0] + 2*np.sqrt(Imeas[0]))
-    mag = magmax*np.logspace(-4,0,6,base=2)
-    phase  = np.linspace(0, 2*np.pi*(9-1)/9, 9)
-    funval = np.zeros((len(mag),len(phase)))
-    xvals = np.zeros((len(mag), len(phase), 3))
-    ops = {'disp':False, 'maxiter': 50}
-    for km in range(len(mag)):  # loop over |f|
-        for kp in range(len(phase)):  # loop over phase(f)
-            mg = mag[km]
-            ph = phase[kp]
-            x = np.zeros((3,))
-            Iinc = Imeas[0] - mg**2
-            if IncModel == 'sqrt':
-                x[0] = np.sqrt(np.abs(Iinc))
-            elif IncModel == 'log':
-                x[0] = np.log(np.abs(Iinc))
-            else: assert False
-            f = mg*np.exp(1j*ph)
-            x[1] = np.real(f)
-            x[2] = np.imag(f)
-            #if km == 0 and kp == 0: x = xPhys2xReg(xtruephys)  # see what happens if we put in the solution 
-            result = minimize(fun,x,args=(Imeas),method='Newton-CG',jac=True, hess=funH, options=ops)
-            funval[km,kp] = result['fun']
-            xvals[km,kp,:] = result['x']
-    bestindex = np.unravel_index(np.argmin(funval),funval.shape)
-    return(xvals[bestindex[0],bestindex[1],:])
-
-
 #===============================================================================
 #                      EFC Class starts here
 #==============================================================================
@@ -344,11 +308,11 @@ class EFC():
     #intthr - intensity threshold for cost penalty of dominant intensity 
     #      - if None, not applied
     #pScale - multiplier applied to dominant intensity penalty above 'intthr'
-    def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, OptPixels=None, ReOrIm='Re', intthr=1.e-7, pScale=1.e-3): 
+    def CostCrossFieldWithDomPenalty(self, a, c0, return_grad=False, OptPixels=None, mode='Int', intthr=1.e-6, pScale=3.e-3): 
         scale = 1.e9  # this helps some of the optimizers
         cmdthr = np.pi/4; # command amplitude limit (radians) - when small it corresponds to the linear approx to exp(1j*x);  too large it may strain the validity of the hybrid equations
         cmdpenamp = 1.e9  # command amplitude penalty scale 
-        assert ReOrIm in ['Re','Im']
+        assert mode in ['Re','Im','Int']
         if (self.CrossOptimSetUp is False) or (OptPixels != self.OptPixels): 
             self.SetupCrossOpt(c0, OptPixels)
             
@@ -361,16 +325,18 @@ class EFC():
             for k in range(len(OptPixels)):
                 f[k] = fh[self.OptPixDex[k]]
 
-        #main penalty term
-        re = np.real(f);  
-        im = np.imag(f);
-        re0 = np.real(crfield0)
-        im0 = np.imag(crfield0)
-        assert re0.shape == re.shape 
-        if ReOrIm == 'Re':
+        if mode in ['Re','Im']:
+          re = np.real(f);  
+          im = np.imag(f);
+          re0 = np.real(crfield0)
+          im0 = np.imag(crfield0)
+          assert re0.shape == re.shape 
+        if mode == 'Re':
              cost = - 0.5*np.sum((re-re0)**2)
-        else:  # ReOrIm = 'Im'
+        elif mode == 'Im':
              cost = - 0.5*np.sum((im-im0)**2)
+        else:   # mode is 'Int'
+            cost = - 0.5*np.sum(np.real( (f - crfield0)*np.conj(f - crfield0) ))
 
         # command amplitude penalty term
         wathp = np.where(a >  cmdthr)[0]
@@ -400,10 +366,12 @@ class EFC():
  
            re = np.real(f);  dre = np.real(df)
            im = np.imag(f);  dim = np.imag(df)
-           if ReOrIm == 'Re':
+           if mode == 'Re':
                 dcost = - np.sum(dre.T*(re-re0), axis=1)
-           else:
+           elif mode == 'Im':
                 dcost = - np.sum(dim.T*(im-im0), axis=1)
+           else:  # mode is 'Int'
+                dcost = - np.sum(np.real(df.T*(f-crfield0)), axis=1)
            dcost += cmdpenamp*len(wathp)
            dcost -= cmdpenamp*len(wathm) 
            

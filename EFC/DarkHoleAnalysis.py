@@ -34,25 +34,27 @@ IZ0fx = IZ0fx.reshape((256,256))
 plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
 
 ######################################################################
-# optimization to find good probes (assuming 10^-5 linear polarizer)
+# optimization to find good probes (assuming 10^-6 linear polarizer)
 ######################################################################
-with open('stuff20240626.pickle','rb') as filep: stuff = pickle.load(filep)
+with open('stuff08222024.pickle','rb') as filep: stuff = pickle.load(filep)
 A =stuff['EFCobj']; # EFC class object
+Cdh = stuff['DHcmd']
 
-
-cfcnIm = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None,ReOrIm='Im',intthr=1.e-6,pScale=2.e-3)
-cfcnRe = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None,ReOrIm='Re',intthr=1.e-6,pScale=2.e-3)
+cfcn = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None, mode='Int',intthr=1.e-6,pScale=2.e-3)
+#cfcnRe = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None, mode='Re',intthr=1.e-6,pScale=2.e-3)
 
 Ntrials = 21
-sol_re = []; sol_im = []; cost_re =[]; cost_im = []
+#sol_re = []; sol_im = []; cost_re =[]; cost_im = []
+sol = []; cost = []
 for k in range(Ntrials):
-    out = optimize.minimize(cfcnRe, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
-    sol_re.append(out['x']); cost_re.append(out['fun'])
-    out = optimize.minimize(cfcnIm, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
-    sol_im.append(out['x']); cost_im.append(out['fun'])
+    #out = optimize.minimize(cfcnRe, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
+    #sol_re.append(out['x']); cost_re.append(out['fun'])
+    out = optimize.minimize(cfcn, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
+    sol.append(out['x']);
+    cost.append(out['fun'])
 
-sol = sol_re + sol_im; # '+' concats two lists here!
-cost = cost_re + cost_im  # '+' concats two lists here!
+#sol = sol_re + sol_im; # '+' concats two lists here!
+#cost = cost_re + cost_im  # '+' concats two lists here!
 
 
 #############################################################
@@ -62,13 +64,10 @@ from EFC import CRB_Poisson
 with open('stuff20240626.pickle','rb') as filep: stuff = pickle.load(filep)
 A =stuff['EFCobj']; # EFC class object
 sols=stuff['solutions'];  # DM command solutions
-sIp = 0.003*stuff['sIp']; # sqrt (DOM intensity) for each solution (with sqrt(10^-5) polarizer)
-#fyr=stuff['fyr']; fyi=stuff['fyi']; # Real and Imag CROSS field probe values for each solution
 ftdom = A.Field(Cdh,'X','Hole','phase',False)  # true dominant field
 ftcro = A.Field(Cdh,'Y','Hole','phase',False)  # true cross field
 fmdom = A.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=0.) # model field at dark hole 
 fmcro = A.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=0.)
-sInc  = 0.  # sqrt(incoherent intensity)
 
 photons = 1.e15
 metric = []; k1k2 = []; 
@@ -94,8 +93,8 @@ for k1 in range(len(sols)):
           pk[k3] = np.max(np.diag(crb))
       metric.append(pk)
     
-metric = np.array(metric)
-met2 = np.max(metric,axis=1); b = np.where(met2 == met2.min())[0][0]
+metric = np.array(metric)  #metric has the max CRB for each solution pair
+met2 = np.median(metric,axis=1); b = np.where(met2 == met2.min())[0][0]
 sol1 = sols[k1k2[b][0]]; sol2 = sols[k1k2[b][1]]  # best solution 
 
 #################################################################
@@ -103,7 +102,7 @@ sol1 = sols[k1k2[b][0]]; sol2 = sols[k1k2[b][1]]  # best solution
 #################################################################
 
 photons = 1.e13; sqphots = np.sqrt(photons);
-extfac = np.sqrt(1.e-5) # linear polarizer (amplitude) extinction factor
+extfac = np.sqrt(1.e-6) # linear polarizer (amplitude) extinction factor
 CSQ = lambda a: np.real( a*np.conj(a) )
 
 with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep:
@@ -139,32 +138,36 @@ py1n = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
 py2n = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 
 argmin = []
-S =   np.zeros((len(A.HolePixels),2))  # array of true intensities
+S =   np.zeros((len(A.HolePixels),3))  # array of true intensities
 g0l = np.zeros((len(A.HolePixels), )).astype('complex')  # linearly estimated cross fields
 g0n = np.zeros((len(A.HolePixels), )).astype('complex')  # nonlinearly estimated cross fields
 U = 1.0*S  # array of measured intensities
 for k in range(len(A.HolePixels)):
-    S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  # true dom intensity
+    S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],
+                                  [0., 0.],                         'Cross', True)  # unprobed intensity
+    S[k,1], gSk1 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  #
                                   [sqphots*px1[k], sqphots*py1[k]], 'Cross', True)
-    S[k,1], gsk1 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  # true cross intensity
+    S[k,2], gsk2 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  #
                                   [sqphots*px2[k], sqphots*py2[k]], 'Cross', True)
-    U[k,0] = np.random.poisson(2 + S[k,0])  #measured intensity for probe 1 - the constant is for dark counts
-    U[k,1] = np.random.poisson(2 + S[k,1])  #measured intensity for probe 2
+    U[k,0] = np.random.poisson(2 + S[k,0])  #measured unprobed intensity
+    U[k,1] = np.random.poisson(2 + S[k,1])  #measured intensity for probe 1 - the constant is for dark counts
+    U[k,2] = np.random.poisson(2 + S[k,2])  #measured intensity for probe 2
 
     #Perform estimation of a = [ Re(f0y), Im(f0y) ]
     #This is a cost fcn to be optimized
     def CostNegLLPoisson(a):
+      I0, gI0 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [0., 0.],                        'CrossDom', True)  # unprobed intensity
       I1, gI1 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px1[k], sqphots*py1[k]],'CrossDom', True)
       I2, gI2 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
-      gI1 = gI1[2:]; gI2 = gI2[2:]  # only need the last two components of the gradient output
-      c, cg = NegLLPoisson( [U[k,0], U[k,1]], [I1, I2],Ig=[gI1, gI2] )
+      gI0 = gI0[2:]; gI1 = gI1[2:]; gI2 = gI2[2:]  # only need the last two components of the gradient output
+      c, cg = NegLLPoisson( [U[k,0], U[k,1], U[k,2]], [I0, I1, I2],Ig=[gI0, gI1, gI2] )
       cg *= sqphots   # the gradient is w.r.t. the field in sqrt(photons) units
       return (c, cg)
     #this performs a local minimization at each grid point
     def GridSearchMin():
         om = optimize.minimize
         fun = CostNegLLPoisson
-        amps = list(min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1, 0.5, .7,.95]))
+        amps = list(U[k,0]*np.array([.01,.1, 0.5, .7,.95]))
         angs = list(np.linspace(0, 2*np.pi*(15/16), 16) - np.pi)
         #amps.append(np.abs(f0y[k]))  # append the true answer
         #angs.append(np.angle(f0y[k]))
@@ -181,7 +184,6 @@ for k in range(len(A.HolePixels)):
         cost = np.array(cost); sols = np.array(sols)
         sol = sols[np.argmin(cost)]
         solcost = cost[np.argmin(cost)]
-        
         argmin.append(np.argmin(cost))
         
         return (sol[0] + 1j*sol[1], solcost)
