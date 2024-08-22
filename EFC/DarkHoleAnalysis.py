@@ -10,8 +10,8 @@ It's kind of a grabbag of code lines
 """
 
 import numpy as np
-import pickle
 import matplotlib.pyplot as plt
+import pickle
 from scipy import optimize
 import EFC
 fig = plt.figure
@@ -24,15 +24,21 @@ EFC = EFC.EFC  # need this to load the pickle
 #get EFC instance w/ dark hole command
 with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep: stuff = pickle.load(filep);
 Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
-#Z = stuff['EFC class'];
+
+######################################################################
+#  make image of original dark hole
+######################################################################
+Z = stuff['EFC class'];
+IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None)
+IZ0fx = IZ0fx.reshape((256,256))
+plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
 
 ######################################################################
 # optimization to find good probes (assuming 10^-5 linear polarizer)
 ######################################################################
+with open('stuff20240626.pickle','rb') as filep: stuff = pickle.load(filep)
+A =stuff['EFCobj']; # EFC class object
 
-IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None)
-IZ0fx = IZ0fx.reshape((256,256))
-plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
 
 cfcnIm = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None,ReOrIm='Im',intthr=1.e-6,pScale=2.e-3)
 cfcnRe = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None,ReOrIm='Re',intthr=1.e-6,pScale=2.e-3)
@@ -40,9 +46,9 @@ cfcnRe = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, Opt
 Ntrials = 21
 sol_re = []; sol_im = []; cost_re =[]; cost_im = []
 for k in range(Ntrials):
-    out = optimize.minimize(cfcnRe, .15*np.random.randn(1089), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
+    out = optimize.minimize(cfcnRe, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
     sol_re.append(out['x']); cost_re.append(out['fun'])
-    out = optimize.minimize(cfcnIm, .15*np.random.randn(1089), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
+    out = optimize.minimize(cfcnIm, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
     sol_im.append(out['x']); cost_im.append(out['fun'])
 
 sol = sol_re + sol_im; # '+' concats two lists here!
@@ -159,11 +165,11 @@ for k in range(len(A.HolePixels)):
         om = optimize.minimize
         fun = CostNegLLPoisson
         amps = list(min((np.sqrt(U[k,0]),np.sqrt(U[k,1])))*np.array([.01,.1, 0.5, .7,.95]))
-        angs = list(np.linspace(0, 2*np.pi*(15/16), 16))
-        amps.append(np.abs(f0y[k]))  # append the true answer
-        angs.append(np.angle(f0y[k]))
+        angs = list(np.linspace(0, 2*np.pi*(15/16), 16) - np.pi)
+        #amps.append(np.abs(f0y[k]))  # append the true answer
+        #angs.append(np.angle(f0y[k]))
         nm = len(amps); ng = len(angs)
-        cost = [] 
+        cost = []
         sols = []
         for km in range(nm):
             for kg in range(ng):
@@ -227,20 +233,6 @@ plt.plot(extfac*np.sqrt(IAhx2),marker='s',color='tan',ls='None');
 plt.plot(np.real(phy2p),marker='d',color='crimson',ls='None');
 plt.plot(np.imag(phy2p),marker='p',color='dodgerblue',ls='None');
 plt.title('Solution 2');plt.xlabel('pixel index'); plt.ylabel('modulation field')
-
-if False:
-  pm = -1.  # negative probes
-  phx1m = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;
-  phx2m = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;
-  phy1m = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
-  phy2m = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;
-
-  plt.figure(); # fields w/o modulation
-  plt.plot(np.real(fAhy0),marker='d',color='crimson',ls='None');
-  plt.plot(np.imag(fAhy0),marker='p',color='dodgerblue',ls='None');
-  plt.title('Nominal Dark Hole Cross field');plt.xlabel('pixel index'); plt.ylabel('nominal field')
-
-
 
 
 
