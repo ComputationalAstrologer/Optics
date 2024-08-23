@@ -42,6 +42,14 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
+#This avoids the numpy Poisson random generator when the intensity is too big
+def RobustPoissonRnd(I):
+    assert np.isscalar(I)
+    if I <= 1.e4:
+        return np.random.poisson(I)
+    else:
+        return I + np.sqrt(I)*np.random.randn()
+
 #This returns the Cramer-Rao bound matrrix and the Fisher Information (FIM), if desired,
 #  under the assumption that the measurements are Poisson distributed.
 #If a scalar number, S, is the expected number of counts and the actual number
@@ -82,16 +90,18 @@ def CRB_Poisson(S, Sg, dk=2.5, return_FIM=False):
 def NegLLPoisson(Ncnt, I, Ig=None, Igg=None):
     M = len(Ncnt)  # M is the number of "measurements"
     if len(I) != M:
-        print("Input counts (M) and the number of intensity values do not match.")
-        assert False
-    if Ig is not None:
-        assert len(Ig) == M        
+        raise ValueError("Input counts (M) and the number of intensity values do not match.")
+    if Ig is not None and len(Ig) != M:
+        raise ValueError("Input counts (M) and the number of intensity gradients do not match.")
     if Igg is not None:
-        assert Ig is not None
-        assert len(Igg) == M
+        if Ig is None:
+            raise ValueError("Hessian requires gradient to be provided.")
+        if len(Igg) != M:
+            raise ValueError("Input counts (M) and the number of intensity Hessians do not match.")
+
     negll = 0.  #negative log-likelihood value
-    negllg = 0.
-    negllgg = 0.
+    negllg = np.zeros_like(Ig[0])
+    negllgg = np.zeros((len(Ig[0]), len(Ig[0])))
     for m in range(M): #fist calculate LL, LLg, LLgg and then multiply by -1 when done
         s = Ncnt[m]*np.log(I[m]) - I[m]
         negll -= s

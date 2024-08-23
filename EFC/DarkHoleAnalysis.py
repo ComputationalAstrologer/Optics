@@ -19,6 +19,7 @@ MakePixList = EFC.MakePixList;
 ProbeIntensity = EFC.ProbeIntensity
 NegLLPoisson = EFC.NegLLPoisson
 CRB_Poisson = EFC.CRB_Poisson
+RobustPoisson = EFC.RobustPoissonRnd
 EFC = EFC.EFC  # need this to load the pickle
 
 #get EFC instance w/ dark hole command
@@ -64,24 +65,23 @@ from EFC import CRB_Poisson
 with open('stuff20240626.pickle','rb') as filep: stuff = pickle.load(filep)
 A =stuff['EFCobj']; # EFC class object
 sols=stuff['solutions'];  # DM command solutions
-ftdom = A.Field(Cdh,'X','Hole','phase',False)  # true dominant field
-ftcro = A.Field(Cdh,'Y','Hole','phase',False)  # true cross field
+ftdom = A.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=None)  # true dominant field
+ftcro = A.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=None)  # true cross field
 fmdom = A.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=0.) # model field at dark hole 
 fmcro = A.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=0.)
 
 photons = 1.e15
-metric = []; k1k2 = []; 
-met2 = 1.e12*np.ones((len(sols),len(sols)))
+metric = []; k1k2 = [];
 for k1 in range(len(sols)):
-  prdom1 = A.Field(Cdh + sols[k1],'X','Hole','phase',False,SpeckleFactor=None) - fmdom  # k1 dominant probe
-  prcro1 = A.Field(Cdh + sols[k1],'Y','Hole','phase',False,SpeckleFactor=None) - fmcro
+  prdom1 = A.Field(Cdh + sols[k1],'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
+  prcro1 = A.Field(Cdh + sols[k1],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
   for k2 in np.arange(k1+1, len(sols)):
       k1k2.append((k1,k2))
-      prdom2 = A.Field(Cdh + sols[k2],'X','Hole','phase',False,SpeckleFactor=None) - fmdom
-      prcro2 = A.Field(Cdh + sols[k2],'Y','Hole','phase',False,SpeckleFactor=None) - fmcro
+      prdom2 = A.Field(Cdh + sols[k2],'X','Hole','phase',False,SpeckleFactor=None) - ftdom
+      prcro2 = A.Field(Cdh + sols[k2],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
       pk = np.zeros((len(A.HolePixels)))
       for k3 in range(len(A.HolePixels)):  # pixel index
-          f0  = np.array( [ftdom[k3], ftcro[k3]])  # true field values
+          f0  = np.array( [ftdom[ k3], ftcro[ k3]])  # true field values
           pr1 = np.array( [prdom1[k3], prcro1[k3] ] )  # k1 probe 
           pr2 = np.array( [prdom2[k3], prcro2[k3] ] ) # k2 probe
           s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
@@ -97,11 +97,45 @@ metric = np.array(metric)  #metric has the max CRB for each solution pair
 met2 = np.median(metric,axis=1); b = np.where(met2 == met2.min())[0][0]
 sol1 = sols[k1k2[b][0]]; sol2 = sols[k1k2[b][1]]  # best solution 
 
+# find a third probe that helps
+kk = []; metric = [];
+prdom1 = A.Field(Cdh + sol1,'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
+prcro1 = A.Field(Cdh + sol1,'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
+prdom2 = A.Field(Cdh + sol2,'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
+prcro2 = A.Field(Cdh + sol2,'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
+for km in range(len(sols)):
+    if km == k1k2[b][0] or km == k1k2[b][1]: continue
+    kk.append(km)
+    sol3 = sols[km]
+    prdom3 = A.Field(Cdh + sol3,'X','Hole','phase',False,SpeckleFactor=None) - ftdom
+    prcro3 = A.Field(Cdh + sol3,'Y','Hole','phase',False,SpeckleFactor=0.) - fmcro
+    pk = np.zeros((len(A.HolePixels)))  # store max(crb) for each pixel
+    for kx in range(len(A.HolePixels)):  # pixel loop
+        f0  = np.array([ftdom[kx], ftcro[kx]])  # true field values
+        pr1 = np.array([prdom1[kx], prcro1[kx]])  # probe 1
+        pr2 = np.array([prdom2[kx], prcro2[kx]])  # probe 2
+        pr3 = np.array([prdom3[kx], prcro3[kx]])  # probe 3
+        s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
+        s1, gs1 = ProbeIntensity(f0,   pr1, 'Cross', True)
+        s2, gs2 = ProbeIntensity(f0,   pr2, 'Cross', True)
+        s3, gs3 = ProbeIntensity(f0,   pr3, 'Cross', True)
+        S = np.array([s0, s1, s2, s3])*photons
+        Sg = np.stack((gs0, gs1, gs2, gs3))*photons
+        crb = CRB_Poisson(S,Sg)
+        pk[kx] = np.max(np.diag(crb))
+    metric.append(pk)
+
+metric = np.array(metric); met2 = np.median(metric, axis=1)
+bb = np.where(met2 == met2.min())[0][0]
+sol3 = sols[kk[bb]]
+
+
+
 #################################################################
-# load pickle containing the two best probes and do some tests  #
+# load pickle containing the best probes and do some tests  #
 #################################################################
 
-photons = 1.e13; sqphots = np.sqrt(photons);
+photons = 1.e18; sqphots = np.sqrt(photons);
 extfac = np.sqrt(1.e-6) # linear polarizer (amplitude) extinction factor
 CSQ = lambda a: np.real( a*np.conj(a) )
 
@@ -115,27 +149,28 @@ A =stuff['EFCobj']; # EFC class object  -  no aberrations - 441 pixels in dark h
 with open('TwoDMsolutions.pickle','rb') as filep:  # these are probe solutions found with a CRB analysis (see above)
     stuff = pickle.load(filep)
 sol1 = stuff['solution1']; sol2 = stuff['solution2'];  del stuff
+#fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.)  # model dom field (no speckles)
 
-
-f0x = A.Field(Cdh,'X','Hole','phase',False,None)  # dom field with speckles
-f0x *= extfac  #accounts for linear polarizer
-f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # cross field with speckles
-fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.)  # model field (no speckles)
-fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.)  # model field (no speckles)
+f0x = A.Field(Cdh,'X','Hole','phase',False,None)*extfac  # true dom field with speckles
+f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # true cross field with speckles
+f0my = A.Field(Cdh,'Y','Hole','phase',False,0.)  # model field (no speckles)
 pm = 1  #positive probes
-px1  = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
-px1 *= extfac
-px2  = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
-px2 *= extfac
-py1 = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
-py2 = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
-pm = -1  #negative probes
-px1n = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
-px1n *= extfac
-px2n = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
-px2n *= extfac
-py1n = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
-py2n = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
+px1  = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,None) - f0x;  # tru dom probe 1
+px2  = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,None) - f0x;  # tru dom probe 2
+px3  = A.Field(Cdh + pm*sol3,'X','Hole','phase',False,None) - f0x;  #               3
+px1 *= extfac; px2 *= extfac; px3 *= extfac
+
+py1 = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - f0my;  # probe 1
+py2 = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - f0my;  # probe 2
+py3 = A.Field(Cdh + pm*sol3,'Y','Hole','phase',False,0.) - f0my   #       3
+
+#pm = -1  #negative probes
+#px1n = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;  # probe 1
+#px1n *= extfac
+#px2n = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;  # probe 2
+#px2n *= extfac
+#py1n = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;  # probe 1
+#py2n = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;  # probe 2
 
 argmin = []
 S =   np.zeros((len(A.HolePixels),3))  # array of true intensities
@@ -149,9 +184,9 @@ for k in range(len(A.HolePixels)):
                                   [sqphots*px1[k], sqphots*py1[k]], 'Cross', True)
     S[k,2], gsk2 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  #
                                   [sqphots*px2[k], sqphots*py2[k]], 'Cross', True)
-    U[k,0] = np.random.poisson(2 + S[k,0])  #measured unprobed intensity
-    U[k,1] = np.random.poisson(2 + S[k,1])  #measured intensity for probe 1 - the constant is for dark counts
-    U[k,2] = np.random.poisson(2 + S[k,2])  #measured intensity for probe 2
+    U[k,0] = RobustPoisson(2 + S[k,0])  #measured unprobed intensity
+    U[k,1] = RobustPoisson(2 + S[k,1])  #measured intensity for probe 1 - the constant is for dark counts
+    U[k,2] = RobustPoisson(2 + S[k,2])  #measured intensity for probe 2
 
     #Perform estimation of a = [ Re(f0y), Im(f0y) ]
     #This is a cost fcn to be optimized
@@ -159,7 +194,8 @@ for k in range(len(A.HolePixels)):
       I0, gI0 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [0., 0.],                        'CrossDom', True)  # unprobed intensity
       I1, gI1 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px1[k], sqphots*py1[k]],'CrossDom', True)
       I2, gI2 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px2[k], sqphots*py2[k]],'CrossDom', True)
-      gI0 = gI0[2:]; gI1 = gI1[2:]; gI2 = gI2[2:]  # only need the last two components of the gradient output
+      I3, gI3 = ProbeIntensity( [sqphots*f0x[k], sqphots*(a[0] +1j*a[1])], [sqphots*px2[k], sqphots*py3[k]],'CrossDom', True)
+      gI0 = gI0[2:]; gI1 = gI1[2:]; gI2 = gI2[2:]; gI3 = gI3[2:]  # only need the last two components of the gradient output
       c, cg = NegLLPoisson( [U[k,0], U[k,1], U[k,2]], [I0, I1, I2],Ig=[gI0, gI1, gI2] )
       cg *= sqphots   # the gradient is w.r.t. the field in sqrt(photons) units
       return (c, cg)
