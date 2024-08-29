@@ -135,7 +135,7 @@ sol3 = sols[kk[bb]]
 # load pickle containing the best probes and do some tests  #
 #################################################################
 
-photons = 1.e18; sqphots = np.sqrt(photons);
+photons = 1.e15; sqphots = np.sqrt(photons);
 extfac = np.sqrt(1.e-6) # linear polarizer (amplitude) extinction factor
 CSQ = lambda a: np.real( a*np.conj(a) )
 
@@ -218,6 +218,9 @@ for k in range(len(A.HolePixels)):
           c, cg = NegLLPoisson( measlist, intlist, gradintlist )
           cg *= sqphots   # the gradient is w.r.t. the field in sqrt(photons) units
           return (c, cg)
+      else:  # mode = 'CRB'
+          return CRB_Poisson(intlist, gradintlist)
+          
     #this performs a local minimization at each grid point
     def GridSearchMin():
         om = optimize.minimize
