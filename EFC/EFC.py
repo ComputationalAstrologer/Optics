@@ -15,8 +15,8 @@ from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
 import matplotlib.pyplot as plt
-machine = "homeLinux"
-#machine = "officeWindows"
+#machine = "homeLinux"
+machine = "officeWindows"
 if machine == "homeLinux":
     MySplineToolsLocation = "/home/rfrazin/Py/Optics"
     PropMatLoc = "/home/rfrazin/Py/EFCSimData/"
@@ -66,7 +66,8 @@ def RobustPoissonRnd(I):
 #dk - dark current noise level (photon units) - (thermal) dark current counts are Poisson - readout noise is not.
 #return_FIM - if True, the FIM will be returned, too
 def CRB_Poisson(S, Sg, dk=2.5, return_FIM=False):
-    assert len(S) == Sg.shape[0]
+    if len(S) != Sg.shape[0]:
+        raise ValueError("S and Sg must have the same number of items")
     M = len(S); N = Sg.shape[1]
     fim = np.zeros((N,N))
     for k in range(M):
