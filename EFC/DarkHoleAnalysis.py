@@ -134,7 +134,7 @@ sol3 = sols[kk[bb]]
 #################################################################
 # load pickle containing the best probes and do some tests  #
 #################################################################
-
+# %%
 photons = 1.e14; sqphots = np.sqrt(photons);
 extfac = np.sqrt(1.e-6) # linear polarizer (amplitude) extinction factor
 CSQ = lambda a: np.real( a*np.conj(a) )
@@ -181,6 +181,7 @@ S =   np.zeros((len(A.HolePixels),4))  # array of true intensities
 #g0l = np.zeros((len(A.HolePixels), )).astype('complex')  # linearly estimated cross fields
 g0n = np.zeros((len(A.HolePixels), )).astype('complex')  # nonlinearly estimated cross fields
 cvg0n = np.zeros((len(A.HolePixels),2,2))  # estimate error covariance matrices
+std0n = np.zeros((len(A.HolePixels),2)  #  corresponding error bars
 U = 1.0*S  # array of measured intensities
 for k in range(len(A.HolePixels)):
     S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],
@@ -244,6 +245,14 @@ for k in range(len(A.HolePixels)):
         return sol[0] + 1j*sol[1]
     g0n[k] = GridSearchMin()
     cvg0n[k,:,:] = Poisson_CostNegLL_Or_CRB([np.real(g0n[k]), np.imag(g0n[k])], mode='CRB')/sqphots
+    std0n[k,:] = np.sqrt(np.diag(cvg0n[k,:.:]))
+    
+plt.figure(); plt.plot(np.arange(441),np.real(f0y),'ko'); plt.errorbar(np.arange(441),np.real(g0n),fmt='rx',yerr=std0n[:,0]);
+plt.title('real part of cross field');
+plt.figure(); plt.plot(np.arange(441),np.imag(f0y),'ko'); plt.errorbar(np.arange(441),np.imag(g0n),fmt='rx',yerr=std0n[:,1]);
+plt.title('imag part of cross field');
+
+
 # %%
 
     # def LinearEstimator():  
