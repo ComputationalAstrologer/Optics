@@ -21,25 +21,66 @@ NegLLPoisson = EFC.NegLLPoisson
 CRB_Poisson = EFC.CRB_Poisson
 RobustPoisson = EFC.RobustPoissonRnd
 EFC = EFC.EFC  # need this to load the pickle
+# %%  
+
+with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
+B = EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
+Cdh = stuffB['DHcmd']  # dark hole command for dominant field
+#sols = stuffB['solutions']
+#sol1 = stuffB['solution1']; sol2 = stuffB['solution2']; sol3 = stuffB['solution3']
+
+
 # %%
-
 ######################################################################
-#  make image of original dark hole
+# make PSF images #
 ######################################################################
-with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep: stuff = pickle.load(filep);
-Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
-Z = stuff['EFC class'];
-IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None)
-IZ0fx = IZ0fx.reshape((256,256))
-plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
+
+IXnom = B.PolIntensity(0*Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=0).reshape((256,256))
+IYnom = B.PolIntensity(0*Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=0).reshape((256,256))
+IXab  = B.PolIntensity(0*Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
+IYab  = B.PolIntensity(0*Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
+IXabh = B.PolIntensity(  Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
+IYabh = B.PolIntensity(  Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
+ # %%
+et = stuffB['pixel_extent']
 
 
-with open('stuff20240902.pickle','rb') as filep: stuff = pickle.load(filep)
-A = EFC(HolePixels=stuff['HolePixels'], SpeckleFactor=stuff['SpeckleFactor'])
-Cdh = stuff['DHcmd']
-sols = stuff['solutions']
+plt.figure(); plt.imshow(np.log10(1.e-7 + IXnom[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Nominal Dominant PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/NomDomPSF.png', dpi=300, bbox_inches='tight')
+
+plt.figure(); plt.imshow(np.log10(1.e-13 + IYnom[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Nominal Cross PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/NomCrossPSF.png', dpi=300, bbox_inches='tight')
+
+plt.figure(); plt.imshow(np.log10(1.e-7 + IXab[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Aberrated Dominant PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/AbDomPSF.png', dpi=300, bbox_inches='tight')
+
+plt.figure(); plt.imshow(np.log10(1.e-13+ IYab[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Aberrated Cross PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/AbCrossPSF.png', dpi=300, bbox_inches='tight')
+
+plt.figure(); plt.imshow(np.log10(1.e-7 + IXabh[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Aberrated Dominant PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/AbDomPSFwHole.png', dpi=300, bbox_inches='tight')
+
+plt.figure(); plt.imshow(np.log10(1.e-13+ IYabh[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Aberrated Cross PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/AbCrossPSFwHole.png', dpi=300, bbox_inches='tight')
+
+et2 = [ 145, 176, 145, 176]  #  for dark hole closeup
+plt.figure(); plt.imshow(np.log10(1.e-13 + IXabh[et2[2]:et2[3],et2[0]:et2[1]]), vmax=-7, extent=et2,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Aberrated Dominant PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/CloseUpDomHole.png', dpi=300, bbox_inches='tight');
+
+plt.figure(); plt.imshow(np.log10(1.e-13 + IYabh[et2[2]:et2[3],et2[0]:et2[1]]), extent=et2,cmap='seismic',origin='lower');plt.colorbar();
+plt.title('Aberrated Cross PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
+plt.savefig('Figs/CloseUpCrossHole.png', dpi=300, bbox_inches='tight');
 
 
+
+# %%
 
 ######################################################################
 # optimization to find good probes (assuming 10^-6 linear polarizer)
@@ -57,7 +98,6 @@ for k in range(Ntrials):
     out = optimize.minimize(cfcn, .8*np.pi*(np.random.rand(1089)-.5), options={'disp':True,'maxiter':40}, method='Powell',jac=False)
     sol.append(out['x']);
     cost.append(out['fun'])
-
 #sol = sol_re + sol_im; # '+' concats two lists here!
 #cost = cost_re + cost_im  # '+' concats two lists here!
 
@@ -135,21 +175,18 @@ sol3 = sols[kk[bb]]
 # %%
 
 #################################################################
-# load pickle containing the best probes and do some tests  #
+# do some tests  #
 #################################################################
-# %%
 
 with open('stuff20240902.pickle','rb') as filep:
-  stuff= pickle.load(filep)
-A = EFC(HolePixels=stuff['HolePixels'], SpeckleFactor=stuff['SpeckleFactor'])
-Cdh = stuff['DHcmd']  # dark hole command for dominant field
-sol1 = stuff['solution1']; sol2 = stuff['solution2']; sol3 = stuff['solution3']
-del stuff
+  stuffA= pickle.load(filep)
+A = EFC(HolePixels=stuffA['HolePixels'], SpeckleFactor=stuffA['SpeckleFactor'])
+Cdh = stuffA['DHcmd']  # dark hole command for dominant field
+sols = stuffA['solutions']
+sol1 = stuffA['solution1']; sol2 = stuffA['solution2']; sol3 = stuffA['solution3']
 
 
-
-# %%
-extfac = np.sqrt(9.99.e-6) # linear polarizer (amplitude) extinction factor
+extfac = np.sqrt(3.e-6) # linear polarizer (amplitude) extinction factor
 f0x = A.Field(Cdh,'X','Hole','phase',False,None)*extfac  # true dom field with speckles
 f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # true cross field with speckles
 f0my = A.Field(Cdh,'Y','Hole','phase',False,0.)  # model field (no speckles)
@@ -164,6 +201,7 @@ px1 *= extfac; px2 *= extfac; px3 *= extfac
 
 
 # %%
+
 photons = 1.e15; sqphots = np.sqrt(photons);
 S =   np.zeros((len(A.HolePixels),4))  # array of true intensities
 #g0l = np.zeros((len(A.HolePixels), )).astype('complex')  # linearly estimated cross fields
@@ -249,7 +287,7 @@ plt.xlabel('pixel index (within dark hole)', fontsize=11);
 plt.ylabel('electric field ($\sqrt{\mathrm{contrast}}$ units)',fontsize=11)
 plt.legend(fontsize=12);
 plt.savefig('Figs/RealEstimate.png', dpi=300, bbox_inches='tight');
-# %%
+
 plt.figure(figsize=(7,9))
 plt.plot(np.arange(441), np.imag(f0y), 'ks', markersize=8,label='Imaginary part of true cross field');
 plt.errorbar(np.arange(441), np.imag(g0n), fmt='ro', markersize=4, yerr=std0n[:, 0], label='Imaginary part of estimated cross field');
@@ -264,10 +302,13 @@ pramp = np.logspace(-3,0,33)
 Ihole = np.zeros_like(pramp)
 for k in range(len(pramp)):
     Ihole[k] = np.median(A.PolIntensity(Cdh + pramp[k]*sol1,'X','Hole','phase',False,None))
-
+# %%
 fig(); plt.plot(pramp,Ihole,'ko-'); plt.xscale('log'); plt.yscale('log');
 plt.tick_params(axis='both', labelsize=12);
-
+plt.xlabel('probe amplitude', fontsize=12);
+plt.ylabel('median dark hole contrast', fontsize=12);
+plt.title('Domintant Dark Hole Intensity vs. Probe Amplitude',fontsize=12)
+plt.savefig('Figs/HoleIntVsProbeAmp.png', dpi=300, bbox_inches='tight')
 
 # %%
 #############################################################
@@ -284,14 +325,16 @@ phx1p = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;
 phx2p = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;
 phy1p = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
 phy2p = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;
-
+# %%
 
 plt.figure(); #result of modulation with solution 1
-plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
-plt.plot(extfac*np.sqrt(IAhx1),marker='s',color='tan',ls='None');
+plt.plot(extfac*np.sqrt(IAhx0),label='Unprobed Dominant $\sqrt{Intensity}$',marker='s',color='black',ls='None');
+plt.plot(extfac*np.sqrt(IAhx1),label='Probed Dominant $\sqrt{Intensity}$'marker='s',color='tan',ls='None');
 plt.plot(np.real(phy1p),marker='d',color='crimson',ls='None');
 plt.plot(np.imag(phy1p),marker='p',color='dodgerblue',ls='None');
 plt.title('Solution One');plt.xlabel('pixel index'); plt.ylabel('modulation field');
+
+# %%
 
 plt.figure();  # result of modulation with solution 2
 plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
@@ -300,6 +343,24 @@ plt.plot(np.real(phy2p),marker='d',color='crimson',ls='None');
 plt.plot(np.imag(phy2p),marker='p',color='dodgerblue',ls='None');
 plt.title('Solution 2');plt.xlabel('pixel index'); plt.ylabel('modulation field')
 
+
+
+
+
+
+
+
+
+######################################################################
+#  make image of original dark hole
+######################################################################
+# %%
+#with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep: stuff = pickle.load(filep);
+#Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
+#Z = stuff['EFC class'];
+#IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None)
+#IZ0fx = IZ0fx.reshape((256,256))
+#plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
 
 
 # %%  linear estimator stuff
