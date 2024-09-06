@@ -312,7 +312,7 @@ plt.savefig('Figs/HoleIntVsProbeAmp.png', dpi=300, bbox_inches='tight')
 
 # %%
 #############################################################
-#       plots for the DM commands sol1 and sol2             #
+#      probe field plots                                    #
 #############################################################
 
 pm = 1.   # positive probes
@@ -327,28 +327,19 @@ phy1p = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
 phy2p = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;
 # %%
 
-plt.figure(); #result of modulation with solution 1
+plt.figure(figsize=(10,5)); #result of modulation with solution 1
 plt.plot(extfac*np.sqrt(IAhx0),label='Unprobed Dominant $\sqrt{Intensity}$',marker='s',color='black',ls='None');
-plt.plot(extfac*np.sqrt(IAhx1),label='Probed Dominant $\sqrt{Intensity}$'marker='s',color='tan',ls='None');
-plt.plot(np.real(phy1p),marker='d',color='crimson',ls='None');
-plt.plot(np.imag(phy1p),marker='p',color='dodgerblue',ls='None');
-plt.title('Solution One');plt.xlabel('pixel index'); plt.ylabel('modulation field');
+plt.plot(extfac*np.sqrt(IAhx1),label='Probed Dominant $\sqrt{Intensity}$',marker='s',color='tan',ls='None');
+plt.plot(np.real(phy1p),label='real part of cross probe', marker='d',color='crimson',ls='None');
+plt.plot(np.imag(phy1p),label='imag part of cross probe',marker='p',color='dodgerblue',ls='None');
+plt.title('Probe Fields',fontsize=12)
+plt.xlabel('pixel index',fontsize=12);
+plt.ylabel('field ($\sqrt{\mathrm{constrast}}$ units)',fontsize=12);
+plt.legend();
+plt.savefig('Figs/ManyFields.png', dpi=300, bbox_inches='tight')
+
 
 # %%
-
-plt.figure();  # result of modulation with solution 2
-plt.plot(extfac*np.sqrt(IAhx0),marker='s',color='black',ls='None');
-plt.plot(extfac*np.sqrt(IAhx2),marker='s',color='tan',ls='None');
-plt.plot(np.real(phy2p),marker='d',color='crimson',ls='None');
-plt.plot(np.imag(phy2p),marker='p',color='dodgerblue',ls='None');
-plt.title('Solution 2');plt.xlabel('pixel index'); plt.ylabel('modulation field')
-
-
-
-
-
-
-
 
 
 ######################################################################
