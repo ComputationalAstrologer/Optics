@@ -26,8 +26,12 @@ EFC = EFC.EFC  # need this to load the pickle
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
 B = EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
-#sols = stuffB['solutions']
-#sol1 = stuffB['solution1']; sol2 = stuffB['solution2']; sol3 = stuffB['solution3']
+sols = stuffB['solutions']
+sol1 = stuffB['solution1']; sol2 = stuffB['solution2']; sol3 = stuffB['solution3']
+photons = stuffB['photons']
+extfac = stuffB['extfac']
+et = stuffB['pixel_extent']
+
 
 
 # %%
@@ -42,7 +46,7 @@ IYab  = B.PolIntensity(0*Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=
 IXabh = B.PolIntensity(  Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
 IYabh = B.PolIntensity(  Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
  # %%
-et = stuffB['pixel_extent']
+
 
 
 plt.figure(); plt.imshow(np.log10(1.e-7 + IXnom[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
@@ -86,7 +90,7 @@ plt.savefig('Figs/CloseUpCrossHole.png', dpi=300, bbox_inches='tight');
 # optimization to find good probes (assuming 10^-6 linear polarizer)
 ######################################################################
 
-cfcn = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None, mode='Int',intthr=1.e-6,pScale=2.e-3)
+cfcn = lambda a: B.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None, mode='Int',intthr=1.e-6,pScale=2.e-3)
 #cfcnRe = lambda a: A.CostCrossFieldWithDomPenalty(a, Cdh, return_grad=False, OptPixels=None, mode='Re',intthr=1.e-6,pScale=2.e-3)
 
 Ntrials = 21
@@ -105,112 +109,81 @@ for k in range(Ntrials):
 #############################################################
 # load some optimized probe solutions and analyze the CRBs  #
 #############################################################
+# %%
 from EFC import CRB_Poisson
 
-ftdom = A.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=None)  # true dominant field
-ftcro = A.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=None)  # true cross field
-fmdom = A.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=0.) # model field at dark hole 
-fmcro = A.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=0.)
+sols = stuffB['solutions']
+ftdom = B.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=None)  # true dominant field at dark hole
+ftcro = B.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=None)  # true cross field at dark hole
+fmcro = B.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=0.)  # model dark hole cross field
+ftdom *= extfac
 
-photons = 1.e15
-metric = []; k1k2 = [];
+metric = []; indlist = [];
 for k1 in range(len(sols)):
-  prdom1 = A.Field(Cdh + sols[k1],'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
-  prcro1 = A.Field(Cdh + sols[k1],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
+  prdom1 = B.Field(Cdh + sols[k1],'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
+  prdom1 *= extfac
+  prcro1 = B.Field(Cdh + sols[k1],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
   for k2 in np.arange(k1+1, len(sols)):
-      k1k2.append((k1,k2))
-      prdom2 = A.Field(Cdh + sols[k2],'X','Hole','phase',False,SpeckleFactor=None) - ftdom
-      prcro2 = A.Field(Cdh + sols[k2],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
-      pk = np.zeros((len(A.HolePixels)))
-      for k3 in range(len(A.HolePixels)):  # pixel index
-          f0  = np.array( [ftdom[ k3], ftcro[ k3]])  # true field values
-          pr1 = np.array( [prdom1[k3], prcro1[k3] ] )  # k1 probe 
-          pr2 = np.array( [prdom2[k3], prcro2[k3] ] ) # k2 probe
-          s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
-          s1, gs1 = ProbeIntensity(f0,   pr1, 'Cross', True)
-          s2, gs2 = ProbeIntensity(f0,   pr2, 'Cross', True)
-          S = np.array([s0, s1, s2])*photons
-          Sg = np.stack( (gs0, gs1, gs2) )*photons
-          crb = CRB_Poisson(S, Sg)
-          pk[k3] = np.max(np.diag(crb))
-      metric.append(pk)
+      prdom2 = B.Field(Cdh + sols[k2],'X','Hole','phase',False,SpeckleFactor=None) - ftdom
+      prdom2 *= extfac
+      prcro2 = B.Field(Cdh + sols[k2],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
+      for k3 in np.arange(k2+1, len(sols)):
+        indlist.append( (k1,k2,k3) )
+        pk = np.zeros((len(B.HolePixels)))
+        prdom3 = B.Field(Cdh + sols[k3],'X','Hole','phase',False,SpeckleFactor=None) - ftdom
+        prdom3 *= extfac
+        prcro3 = B.Field(Cdh + sols[k3],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
+        for kp in range(len(B.HolePixels)):  # pixel index
+           f0  = np.array( [ftdom[ kp], ftcro[ kp]])  # true field values
+           pr1 = np.array( [prdom1[kp], prcro1[kp] ] ) # k1 probe 
+           pr2 = np.array( [prdom2[kp], prcro2[kp] ] ) # k2 probe
+           pr3 = np.array( [prdom3[kp], prcro3[kp] ] ) # k3 probe
+           s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
+           s1, gs1 = ProbeIntensity(f0,   pr1, 'Cross', True)
+           s2, gs2 = ProbeIntensity(f0,   pr2, 'Cross', True)
+           s3, gs3 = ProbeIntensity(f0,   pr3, 'Cross', True)
+           S = np.array([s0, s1, s2, s3])*photons
+           Sg = np.stack( (gs0, gs1, gs2, gs3) )*photons
+           crb = CRB_Poisson(S, Sg)
+           pk[kp] = np.max(np.diag(crb))
+        metric.append(pk)
     
 metric = np.array(metric)  #metric has the max CRB for each solution pair
 
 met2 = np.max(metric,axis=1); b = np.where(met2 == met2.min())[0][0]
-sol1 = sols[k1k2[b][0]]; sol2 = sols[k1k2[b][1]]  # best solution 
-
-# %% 
-kk = []; metric = [];  # find a third probe that helps
-prdom1 = A.Field(Cdh + sol1,'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
-prcro1 = A.Field(Cdh + sol1,'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
-prdom2 = A.Field(Cdh + sol2,'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
-prcro2 = A.Field(Cdh + sol2,'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
-for km in range(len(sols)):
-    if km == k1k2[b][0] or km == k1k2[b][1]: continue
-    kk.append(km)
-    sol3 = sols[km]
-    prdom3 = A.Field(Cdh + sol3,'X','Hole','phase',False,SpeckleFactor=None) - ftdom
-    prcro3 = A.Field(Cdh + sol3,'Y','Hole','phase',False,SpeckleFactor=0.) - fmcro
-    pk = np.zeros((len(A.HolePixels)))  # store max(crb) for each pixel
-    for kx in range(len(A.HolePixels)):  # pixel loop
-        f0  = np.array([ftdom[kx], ftcro[kx]])  # true field values
-        pr1 = np.array([prdom1[kx], prcro1[kx]])  # probe 1
-        pr2 = np.array([prdom2[kx], prcro2[kx]])  # probe 2
-        pr3 = np.array([prdom3[kx], prcro3[kx]])  # probe 3
-        s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
-        s1, gs1 = ProbeIntensity(f0,   pr1, 'Cross', True)
-        s2, gs2 = ProbeIntensity(f0,   pr2, 'Cross', True)
-        s3, gs3 = ProbeIntensity(f0,   pr3, 'Cross', True)
-        S = np.array([s0, s1, s2, s3])*photons
-        Sg = np.stack((gs0, gs1, gs2, gs3))*photons
-        crb = CRB_Poisson(S,Sg)
-        pk[kx] = np.max(np.diag(crb))
-    metric.append(pk)
-
-metric = np.array(metric); met2 = np.max(metric, axis=1)
-bb = np.where(met2 == met2.min())[0][0]
-sol3 = sols[kk[bb]]
+sol1 = sols[indlist[b][0]]; sol2 = sols[indlist[b][1]]; sol3 = sols[indlist[b][2]]  # best solution 
 
 # %%
 
 #################################################################
-# do some tests  #
+# perform probing estimates  #
 #################################################################
+# %%
 
-with open('stuff20240902.pickle','rb') as filep:
-  stuffA= pickle.load(filep)
-A = EFC(HolePixels=stuffA['HolePixels'], SpeckleFactor=stuffA['SpeckleFactor'])
-Cdh = stuffA['DHcmd']  # dark hole command for dominant field
-sols = stuffA['solutions']
-sol1 = stuffA['solution1']; sol2 = stuffA['solution2']; sol3 = stuffA['solution3']
-
-
-extfac = np.sqrt(3.e-6) # linear polarizer (amplitude) extinction factor
-f0x = A.Field(Cdh,'X','Hole','phase',False,None)*extfac  # true dom field with speckles
-f0y = A.Field(Cdh,'Y','Hole','phase',False,None)  # true cross field with speckles
-f0my = A.Field(Cdh,'Y','Hole','phase',False,0.)  # model field (no speckles)
+f0x = B.Field(Cdh,'X','Hole','phase',False,None)*extfac  # true dom field with speckles
+f0y = B.Field(Cdh,'Y','Hole','phase',False,None)  # true cross field with speckles
+f0my = B.Field(Cdh,'Y','Hole','phase',False,0.)  # model field (no speckles)
 pm = 1  #positive probes
-px1  = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,None) - f0x;  # tru dom probe 1
-px2  = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,None) - f0x;  # tru dom probe 2
-px3  = A.Field(Cdh + pm*sol3,'X','Hole','phase',False,None) - f0x;  #               3
-py1 = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - f0my;  # probe 1
-py2 = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - f0my;  # probe 2
-py3 = A.Field(Cdh + pm*sol3,'Y','Hole','phase',False,0.) - f0my   #       3
+px1  = B.Field(Cdh + pm*sol1,'X','Hole','phase',False,None) - f0x;  # tru dom probe 1
+px2  = B.Field(Cdh + pm*sol2,'X','Hole','phase',False,None) - f0x;  # tru dom probe 2
+px3  = B.Field(Cdh + pm*sol3,'X','Hole','phase',False,None) - f0x;  #               3
+py1 = B.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - f0my;  # probe 1
+py2 = B.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - f0my;  # probe 2
+py3 = B.Field(Cdh + pm*sol3,'Y','Hole','phase',False,0.) - f0my   #       3
 px1 *= extfac; px2 *= extfac; px3 *= extfac
 
 
 # %%
 
-photons = 1.e15; sqphots = np.sqrt(photons);
-S =   np.zeros((len(A.HolePixels),4))  # array of true intensities
-#g0l = np.zeros((len(A.HolePixels), )).astype('complex')  # linearly estimated cross fields
-g0n = np.zeros((len(A.HolePixels), )).astype('complex')  # nonlinearly estimated cross fields
-cvg0n = np.zeros((len(A.HolePixels),2,2))  # estimate error covariance matrices
-std0n = np.zeros((len(A.HolePixels),2))  #  corresponding error bars
+sqphots = np.sqrt(photons);
+S =   np.zeros((len(B.HolePixels),4))  # array of true intensities
+#g0l = np.zeros((len(B.HolePixels), )).astype('complex')  # linearly estimated cross fields
+g0n = np.zeros((len(B.HolePixels), )).astype('complex')  # nonlinearly estimated cross fields
+cvg0n = np.zeros((len(B.HolePixels),2,2))  # estimate error covariance matrices
+std0n = np.zeros((len(B.HolePixels),2))  #  corresponding error bars
 U = 1.0*S  # array of measured intensities
 # %%
-for k in range(len(A.HolePixels)):
+for k in range(len(B.HolePixels)):
 # 
     S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],
                                   [0., 0.],                         'Cross', True)  # unprobed intensity
@@ -279,6 +252,7 @@ for k in range(len(A.HolePixels)):
 
 
 # %%  plot estimates
+savefigs = True
 plt.figure(figsize=(7,9))
 plt.plot(np.arange(441), np.real(f0y), 'ks', markersize=8,label='Real part of true cross field');
 plt.errorbar(np.arange(441), np.real(g0n), fmt='ro', markersize=4, yerr=std0n[:, 0], label='Real part of estimated cross field');
@@ -286,7 +260,8 @@ plt.title('Real part of cross field', fontsize=14);
 plt.xlabel('pixel index (within dark hole)', fontsize=11);
 plt.ylabel('electric field ($\sqrt{\mathrm{contrast}}$ units)',fontsize=11)
 plt.legend(fontsize=12);
-plt.savefig('Figs/RealEstimate.png', dpi=300, bbox_inches='tight');
+if savefigs:
+  plt.savefig('Figs/RealEstimate.png', dpi=300, bbox_inches='tight');
 
 plt.figure(figsize=(7,9))
 plt.plot(np.arange(441), np.imag(f0y), 'ks', markersize=8,label='Imaginary part of true cross field');
@@ -295,20 +270,9 @@ plt.title('Imaginary part of cross field', fontsize=14);
 plt.xlabel('pixel index (within dark hole)', fontsize=11);
 plt.ylabel('electric field ($\sqrt{\mathrm{contrast}}$ units)', fontsize=11)
 plt.legend(fontsize=12);
-plt.savefig('Figs/ImagEstimate.png', dpi=300, bbox_inches='tight');
+if savefigs:
+  plt.savefig('Figs/ImagEstimate.png', dpi=300, bbox_inches='tight');
 
-# %%  plot Ix as a function of probe amplitude
-pramp = np.logspace(-3,0,33)
-Ihole = np.zeros_like(pramp)
-for k in range(len(pramp)):
-    Ihole[k] = np.median(A.PolIntensity(Cdh + pramp[k]*sol1,'X','Hole','phase',False,None))
-# %%
-fig(); plt.plot(pramp,Ihole,'ko-'); plt.xscale('log'); plt.yscale('log');
-plt.tick_params(axis='both', labelsize=12);
-plt.xlabel('probe amplitude', fontsize=12);
-plt.ylabel('median dark hole contrast', fontsize=12);
-plt.title('Domintant Dark Hole Intensity vs. Probe Amplitude',fontsize=12)
-plt.savefig('Figs/HoleIntVsProbeAmp.png', dpi=300, bbox_inches='tight')
 
 # %%
 #############################################################
@@ -316,16 +280,11 @@ plt.savefig('Figs/HoleIntVsProbeAmp.png', dpi=300, bbox_inches='tight')
 #############################################################
 
 pm = 1.   # positive probes
-IAhx0 = A.PolIntensity(Cdh,'X','Hole','phase',False,None)
-fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.);
-fAhy0 = A.Field(Cdh,'Y','Hole','phase',False,0.);
-IAhx1 = A.PolIntensity(Cdh + pm*sol1,'X','Hole','phase',False,None)
-IAhx2 = A.PolIntensity(Cdh + pm*sol2,'X','Hole','phase',False,None)
-phx1p = A.Field(Cdh + pm*sol1,'X','Hole','phase',False,0.) - fAhx0;
-phx2p = A.Field(Cdh + pm*sol2,'X','Hole','phase',False,0.) - fAhx0;
-phy1p = A.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
-phy2p = A.Field(Cdh + pm*sol2,'Y','Hole','phase',False,0.) - fAhy0;
-# %%
+IAhx0 = B.PolIntensity(Cdh,'X','Hole','phase',False,None)
+fAhy0 = B.Field(Cdh,'Y','Hole','phase',False,0.);
+IAhx1 = B.PolIntensity(Cdh + pm*sol1,'X','Hole','phase',False,None)
+phy1p = B.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
+
 
 plt.figure(figsize=(10,5)); #result of modulation with solution 1
 plt.plot(extfac*np.sqrt(IAhx0),label='Unprobed Dominant $\sqrt{Intensity}$',marker='s',color='black',ls='None');
@@ -336,22 +295,25 @@ plt.title('Probe Fields',fontsize=12)
 plt.xlabel('pixel index',fontsize=12);
 plt.ylabel('field ($\sqrt{\mathrm{constrast}}$ units)',fontsize=12);
 plt.legend();
-plt.savefig('Figs/ManyFields.png', dpi=300, bbox_inches='tight')
+if savefigs:
+  plt.savefig('Figs/ManyFields.png', dpi=300, bbox_inches='tight')
 
 
 # %%
 
+# %%  plot Ix as a function of probe amplitude
+pramp = np.logspace(-3,0,33)
+Ihole = np.zeros_like(pramp)
+for k in range(len(pramp)):
+    Ihole[k] = np.median(B.PolIntensity(Cdh + pramp[k]*sol1,'X','Hole','phase',False,None))
 
-######################################################################
-#  make image of original dark hole
-######################################################################
-# %%
-#with open('minus10HoleWithSpeckles33x33.pickle','rb') as filep: stuff = pickle.load(filep);
-#Cdh = stuff['DH command']  # Dark Hole command (phase values not DM height)
-#Z = stuff['EFC class'];
-#IZ0fx = Z.PolIntensity(Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None)
-#IZ0fx = IZ0fx.reshape((256,256))
-#plt.figure(); plt.imshow(np.log10(1.e-13+IZ0fx),cmap='seismic',origin='lower');plt.colorbar(); plt.title('Ix')
+fig(); plt.plot(pramp,Ihole,'ko-'); plt.xscale('log'); plt.yscale('log');
+plt.tick_params(axis='both', labelsize=12);
+plt.xlabel('probe amplitude', fontsize=12);
+plt.ylabel('median dark hole contrast', fontsize=12);
+plt.title('Domintant Dark Hole Intensity vs. Probe Amplitude',fontsize=12)
+if savefigs:
+  plt.savefig('Figs/HoleIntVsProbeAmp.png', dpi=300, bbox_inches='tight')
 
 
 # %%  linear estimator stuff
