@@ -20,11 +20,10 @@ ProbeIntensity = EFC.ProbeIntensity
 NegLLPoisson = EFC.NegLLPoisson
 CRB_Poisson = EFC.CRB_Poisson
 RobustPoisson = EFC.RobustPoissonRnd
-EFC = EFC.EFC  # need this to load the pickle
 # %%  
 
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
-B = EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
+B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
 sols = stuffB['solutions']
 sol1 = stuffB['solution1']; sol2 = stuffB['solution2']; sol3 = stuffB['solution3']
