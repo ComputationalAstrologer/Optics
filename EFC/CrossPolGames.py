@@ -22,16 +22,39 @@ import EFC  # this module is the main one
 A = EFC.EFC(HolePixels=None, SpeckleFactor=0.)  # if this doesn't work, go back to README.txt
 
 #create a DM command corresponding to a flat surface
-C_flat = np.zeros((A.Sx.shape[1],))  # A.Sx is dominant field Jacobian
+C_flat = np.zeros((A.Sx.shape[1],))  # A.Sx is dominant field Jacobian (the variable name has no relationship to the musical note)
 
 #get the dominant ('X') electric field at the detector for the nominal model - this array is complex-valued 
 fd = A.Field(C_flat, XorY='X', region='Full', DM_mode='phase',return_grad=False,SpeckleFactor=0.)
 #        cross    ('Y")
 fc = A.Field(C_flat, XorY='Y', region='Full', DM_mode='phase',return_grad=False,SpeckleFactor=0.)
 fd = fd.reshape((256,256));  fc = fc.reshape((256,256))
-
 #make images of the imag parts of the dominant and cross fields
-plt.figure(); plt.imshow(np.imag(fd),cmap='seismic');plt.colorbar();
-plt.figure(); plt.imshow(np.imag(fc),cmap='seismic');plt.colorbar();
+plt.figure(); plt.imshow(np.imag(fd),cmap='seismic',origin='lower');plt.colorbar();
+plt.figure(); plt.imshow(np.imag(fc),cmap='seismic',origin='lower');plt.colorbar();
+
+
+#Make a random DM command (phase values, not heights) and look at the intensities.
+#Note .PolIntensity uses the .Field function called above  
+C_rnd = 0.5*np.random.randn(C_flat.shape)
+Id_rnd = A.PolIntensity(C_rnd,'X','Full','phase',False,0.).reshape((256,256))
+Ic_rnd = A.PolIntensity(C_rnd,'Y','Full','phase',False,0.).reshape((256,256))
+plt.figure(); plt.imshow(np.log10(1.e-7  + Id_rnd),cmap='seismic',origin='lower');plt.colorbar();
+plt.figure(); plt.imshow(np.log10(1.e-12 + Ic_rnd),cmap='seismic',origin='lower');plt.colorbar();
+
+#Going back to a flat DM command, let's include the speckle fields from the files SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy, SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy
+Id_sp = A.PolIntensity(C_flat,'X','Full','phase',False,SpeckleFactor=1.).reshape((256,256))
+Ic_sp = A.PolIntensity(C_flat,'Y','Full','phase',False,SpeckleFactor=1.).reshape((256,256))
+plt.figure(); plt.imshow(np.log10(1.e-7  + Id_sp),cmap='seismic',origin='lower');plt.colorbar();
+plt.figure(); plt.imshow(np.log10(1.e-12 + Ic_sp),cmap='seismic',origin='lower');plt.colorbar();
+
+#Now let's make up a new speckle field arising from random phases and amplitudes multiplying the CBS basis functions in the input plane
+rndphasor = 1 + 0.3*np.random.randn(C_flat.shape) + 1j*np.random.randn(C_flat.shape)
+spfield_d = (A.Sx@rndphasor).reshape((256,256)) - fd
+spfield_c = (A.Sy@rndphasor).reshape((256,256)) - fc
+plt.figure(); plt.imshow(np.imag(spfield_d),cmap='seismic',origin='lower');plt.colorbar();
+plt.figure(); plt.imshow(np.imag(spfield_c),cmap='seismic',origin='lower');plt.colorbar();
+
+
 
 print("Still Under Construction")
