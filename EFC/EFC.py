@@ -15,8 +15,8 @@ from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
 import matplotlib.pyplot as plt
-machine = "homeLinux"
-#machine = "officeWindows"
+#machine = "homeLinux"
+machine = "officeWindows"
 if machine == "homeLinux":
     MySplineToolsLocation = "/home/rfrazin/Py/Optics"
     PropMatLoc = "/home/rfrazin/Py/EFCSimData/"
