@@ -30,10 +30,10 @@ was used to create the speckle fields in the paper.
 3a: clone this repo.  Note that "EFC" is subdirectory of the "Optics" repo, which git
 will clone by default.  You need only two things from the Optics repo, which are the
 the program Bspline3.py and the EFC subdirectory, which has the rest of the needed
-Python codes.   Feel free to use "git rm" to get rid of everything else in Optics.
+Python codes.  
 
 3b: Create a new branch on your computer for you to edit.  This will allow you to pull changes from the repo on github (master branch) without merge conflicts.  Use: "git checkout -b MyBranch" .
-To pull updates from the master branch use the commands: "git checkout master" and then "git pull origin master".  Go back to your own branch with "git checkout MyBranch" and then you can use "git merge master" at your own risk.   
+To pull updates from the master branch use the commands: "git checkout master" and then "git pull origin master".  Go back to your own branch with "git checkout MyBranch" and then you can use "git merge master" at your own risk.    
 
 
 4: Go to the EFC directory.  You will do everything there.
