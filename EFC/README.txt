@@ -12,7 +12,7 @@ GitHub is not a good place for large binary files, and god help you if get such 
 stuck in your commit history. (Note that if this happens to you and prayer is 
 unsuccessful in resolving the issue, you can use the BFG Repo-Cleaner to do the job.)
 
-2- From the Google drive link, download the 4 files:
+2- From the Google Drive link, download the 4 files:
 SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy
 SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy
 ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ex.npy
@@ -30,7 +30,9 @@ was used to create the speckle fields in the paper.
 3a: clone this repo.  Note that "EFC" is subdirectory of the "Optics" repo, which git
 will clone by default.  You need only two things from the Optics repo, which are the
 the program Bspline3.py and the EFC subdirectory, which has the rest of the needed
-Python codes.  
+Python codes.  Note that the file Large3OAPcoronagraph.os is created by the proprietary
+package VirtualLab Fusion (VLF) from LightTrans, Inc.  It was used to calculate  the
+above .npy files stored on Google Drive.
 
 3b: Create a new branch on your computer for you to edit.  This will allow you to pull changes from the repo on github (master branch) without merge conflicts.  Use: "git checkout -b MyBranch" .
 To pull updates from the master branch use the commands: "git checkout master" and then "git pull origin master".  Go back to your own branch with "git checkout MyBranch" and then you can use "git merge master" at your own risk.    
