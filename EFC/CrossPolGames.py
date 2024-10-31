@@ -61,6 +61,7 @@ with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 et = stuffB['pixel_extent']  # phone home
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
+
 IXabh = B.PolIntensity(  Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
 IYabh = B.PolIntensity(  Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
 
@@ -70,6 +71,11 @@ plt.title('Aberrated Dominant PSF (contrast units) with Hole'); plt.ylabel('pixe
 plt.figure(); plt.imshow(np.log10(1.e-13+ IYabh[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Cross PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
 # %%
+# Let's make Fig.6 from the paper.
+
+
+
+"""
 #All EFC approaches, apart from the model-free one (ref. 10 in the paper) rely
 #  on the validity of the linearized hybrid equation for the dominant field,
 #  which is eq.29 in the paper.  This approach relies on the nonlinear version
@@ -82,6 +88,8 @@ Dmy = B.Shy   # this only includes the 441 rows corresponding to the dark hole p
 #  applied to the input field.  A convenient way to do this for (at least for
 #  aberrations with power at low spatial frequencies) is to take advantage of the
 #  33x33 spline basis to which the Jacobians correspond.
+"""
+
 rndco = np.load('../../EFCSimData/SplCoPerturbs4SpeckleFieldReducedFrom33x33PhaseScreen.npy')  # put in your path to this file (see README.txt)
 rndco += 1.  # The above file doesn't include the constant term, so this is needed.
 #look at the amplitudes and phases of the coefficient vector:

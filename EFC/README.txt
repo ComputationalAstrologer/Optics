@@ -29,14 +29,15 @@ was used to create the speckle fields in the paper.
 
 3a: clone this repo.  Note that "EFC" is subdirectory of the "Optics" repo, which git
 will clone by default.  You need only two things from the Optics repo, which are the
-the program Bspline3.py and the EFC subdirectory, which has the rest of the needed
-Python codes.  Note that the file Large3OAPcoronagraph.os is created by the proprietary
+the program Bspline3.py and the EFC directory, which is where you will do everything.
+Note that the file Large3OAPcoronagraph.os is created by the proprietary
 package VirtualLab Fusion (VLF) from LightTrans, Inc.  It was used to calculate  the
-above .npy files stored on Google Drive.
+above .npy files stored on Google Drive.  The file DarkHoleAnalysis.py creates the
+figures in the paper, but it's not user friendly.  Instead, I provided a tutorial
+CrossPolGames.py (see below).
 
 3b: Create a new branch on your computer for you to edit.  This will allow you to pull changes from the repo on github (master branch) without merge conflicts.  Use: "git checkout -b MyBranch" .
-To pull updates from the master branch use the commands: "git checkout master" and then "git pull origin master".  Go back to your own branch with "git checkout MyBranch" and then you can use "git merge master" at your own risk.    
-
+To pull updates from the master branch use the commands: "git checkout master" and then "git pull origin master".  Go back to your own branch with "git checkout MyBranch" and then you can use "git merge master" at your own risk to bring the updates on master into your MyBranch.
 
 4: Go to the EFC directory.  You will do everything there.
 

@@ -25,12 +25,9 @@ RobustPoisson = EFC.RobustPoissonRnd
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
-sols = stuffB['solutions']
-sol1 = stuffB['solution1']; sol2 = stuffB['solution2']; sol3 = stuffB['solution3']
-photons = stuffB['photons']
-extfac = stuffB['extfac']
+photons = stuffB['photons_unitycontrast']  # photons/pixel/exposure corresponding to unity contrast
+extfac = stuffB['extfac_sqrt2eps']  # this polarizer extinction factor is a field (not intensity) multiplier, corresponding to 2 times the intensity exctinction factor of a single polarizer.
 et = stuffB['pixel_extent']
-
 
 
 # %%
@@ -110,15 +107,20 @@ for k in range(Ntrials):
 #############################################################
 # %%
 from EFC import CRB_Poisson
+with open('ProbeSolutions20240905.pickle','rb') as pfpp:
+    soldict = pickle.load(pfpp);
+sols = soldict['All_solutions']
 
-sols = stuffB['solutions']
+
 ftdom = B.Field(Cdh,'X','Hole','phase',False,SpeckleFactor=None)  # true dominant field at dark hole
 ftcro = B.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=None)  # true cross field at dark hole
 fmcro = B.Field(Cdh,'Y','Hole','phase',False,SpeckleFactor=0.)  # model dark hole cross field
 ftdom *= extfac
 
+import time;  time_loopstart = time.time()
 metric = []; indlist = [];
 for k1 in range(len(sols)):
+  print("loop",k1,"of",len(sols), "elapsed time is", (time.time()-time_loopstart)/60 ,"minutes")
   prdom1 = B.Field(Cdh + sols[k1],'X','Hole','phase',False,SpeckleFactor=None) - ftdom  # k1 dominant probe
   prdom1 *= extfac
   prcro1 = B.Field(Cdh + sols[k1],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
@@ -158,6 +160,10 @@ sol1 = sols[indlist[b][0]]; sol2 = sols[indlist[b][1]]; sol3 = sols[indlist[b][2
 # perform probing estimates  #
 #################################################################
 # %%
+
+with open('ProbeSolutions20240905.pickle','rb') as pfpp:
+    soldict = pickle.load(pfpp);
+sol1 = soldict['Best3'][0]; sol2 = sodict['Best3'][1]; sol2 = soldict['Best3'][2]
 
 f0x = B.Field(Cdh,'X','Hole','phase',False,None)*extfac  # true dom field with speckles
 f0y = B.Field(Cdh,'Y','Hole','phase',False,None)  # true cross field with speckles
@@ -277,6 +283,10 @@ if savefigs:
 #############################################################
 #      probe field plots                                    #
 #############################################################
+
+with open('ProbeSolutions20240905.pickle','rb') as pfpp:
+    soldict = pickle.load(pfpp);
+sol1 = soldict['Best3'][0]; sol2 = sodict['Best3'][1]; sol2 = soldict['Best3'][2]
 
 pm = 1.   # positive probes
 IAhx0 = B.PolIntensity(Cdh,'X','Hole','phase',False,None)
