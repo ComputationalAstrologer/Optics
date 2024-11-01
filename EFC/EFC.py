@@ -15,8 +15,8 @@ from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
 import matplotlib.pyplot as plt
-#machine = "homeLinux"
-machine = "officeWindows"
+machine = "homeLinux"
+#machine = "officeWindows"
 if machine == "homeLinux":
     MySplineToolsLocation = "/home/rfrazin/Py/Optics"
     PropMatLoc = "/home/rfrazin/Py/EFCSimData/"
@@ -26,14 +26,10 @@ elif machine == 'officeWindows':
 syspath.insert(0, MySplineToolsLocation)
 import Bspline3 as BS  # this module is in MySplineToolsLocation
 
-Reduced = True
-if not Reduced: assert False  # the fplength is problematic
-Sxfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ex.npy'
-Syfn = 'SysMat_LgOAPcg21x21_ContrUnits_Ey.npy'
-SpecfieldXfn = 'SpeckleFieldFrom24x24screen_Ex.npy'
-SpecfieldYfn = 'SpeckleFieldFrom24x24screen_Ey.npy'
 fpsize = 512  # size of focal plane in pixels
 fplength = 20. #length of detector in mm
+Reduced = True
+if not Reduced: assert False  # the fplength is problematic
 if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     fpsize //= 2 
     Sxfn = 'ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ex.npy'  # 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ex.npy'
