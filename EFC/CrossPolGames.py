@@ -58,8 +58,12 @@ plt.figure(); plt.imshow(np.imag(spfield_c),cmap='seismic',origin='lower');plt.c
 # %%
 #Let's recreate the bottom row of Fig.8 in the paper
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
+#see what's in there!
+stuffB.keys()
+#this sets up the instance of the EFC class that already contains a dark for the
+#  speckle field read in by the .__init__  function
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
-et = stuffB['pixel_extent']  # phone home
+et = stuffB['pixel_extent']  # et phone home!
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
 
 IXabh = B.PolIntensity(  Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
@@ -72,38 +76,79 @@ plt.figure(); plt.imshow(np.log10(1.e-13+ IYabh[et[2]:et[3],et[0]:et[1]]), exten
 plt.title('Aberrated Cross PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
 # %%
 # Let's make Fig.6 from the paper.
+with open('ProbeSolutions20240905.pickle','rb') as pfpp:
+    soldict = pickle.load(pfpp);
+#see what's in there!
+soldict.keys()
+sol1 = soldict['Best3'][0]; sol2 = soldict['Best3'][1]; sol2 = soldict['Best3'][2]
+
+pm = 1.   # positive probes
+IAhx0 = B.PolIntensity(Cdh,'X','Hole','phase',False,None)
+fAhy0 = B.Field(Cdh,'Y','Hole','phase',False,0.);
+IAhx1 = B.PolIntensity(Cdh + pm*sol1,'X','Hole','phase',False,None)
+phy1p = B.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
 
 
+plt.figure(figsize=(10,5)); #result of modulation with solution 1
+plt.plot(extfac*np.sqrt(IAhx0),label='Unprobed Dominant $\sqrt{Intensity}$',marker='s',color='black',ls='None');
+plt.plot(extfac*np.sqrt(IAhx1),label='Probed Dominant $\sqrt{Intensity}$',marker='s',color='tan',ls='None');
+plt.plot(np.real(phy1p),label='real part of cross probe', marker='d',color='crimson',ls='None');
+plt.plot(np.imag(phy1p),label='imag part of cross probe',marker='p',color='dodgerblue',ls='None');
+plt.title('Probe Fields',fontsize=12)
+plt.xlabel('pixel index',fontsize=12);
+plt.ylabel('field ($\sqrt{\mathrm{constrast}}$ units)',fontsize=12);
+plt.legend();
+# %%
+#
+#To recreate Fig.10 (bearning in mind that the measurements are Poisson random deviates),
+#   run the code lines in DarkHoleAnalysis.py under the heading: perform probing estimates
 
 """
-#All EFC approaches, apart from the model-free one (ref. 10 in the paper) rely
-#  on the validity of the linearized hybrid equation for the dominant field,
-#  which is eq.29 in the paper.  This approach relies on the nonlinear version
-#  in eq.27 and its sibling for the cross field, i.e., eq.28.  Let's test this
-#  for the example in the paper.
-#Let Dx and Dy be the model (i.e., idealized) Jacobians indicated in the paper:
+                        Jacobian Testing
+
+All EFC approaches, apart from the model-free one (ref. 10 in the paper) rely
+  on the validity of the linearized hybrid equation for the dominant field,
+  which is eq.29 in the paper.  This approach relies on the nonlinear version
+  in eq.27 and its sibling for the cross field, i.e., eq.28.
+
+
+Let Dx and Dy be the model (i.e., idealized) Jacobians indicated in the paper:
 Dmx = B.Shx   # this only includes the 441 rows corresponding to the dark hole pixels
 Dmy = B.Shy   # this only includes the 441 rows corresponding to the dark hole pixels
-#In this paper optical aberrations are mimicked with a a phase and amplitude screen
-#  applied to the input field.  A convenient way to do this for (at least for
-#  aberrations with power at low spatial frequencies) is to take advantage of the
-#  33x33 spline basis to which the Jacobians correspond.
+In this paper optical aberrations are mimicked with a a phase and amplitude screen
+  applied to the input field.  A convenient way to do this for (at least for
+  aberrations with power at low spatial frequencies) is to take advantage of the
+  33x33 spline basis to which the Jacobians correspond.
 """
+# %%
+with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
+#see what's in there!
+stuffB.keys()
+#this sets up the instance of the EFC class that already contains a dark for the
+#  speckle field read in by the .__init__  function
+B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
+Cdh = stuffB['DHcmd']  # dark hole command for dominant field
 
-rndco = np.load('../../EFCSimData/SplCoPerturbs4SpeckleFieldReducedFrom33x33PhaseScreen.npy')  # put in your path to this file (see README.txt)
-rndco += 1.  # The above file doesn't include the constant term, so this is needed.
-#look at the amplitudes and phases of the coefficient vector:
-plt.figure(); plt.plot(np.abs(  rndco),'rx'); plt.title('amplitude of coefficients')
-plt.figure(); plt.plot(np.angle(rndco),'bo'); plt.title('phase of coefficients')
+#Since we don't have access to the original complex-valued phase screen used to create the
+#  the speckle fields (B.spx and B.spy)*SpeckleFactor, let's find a vector of spline coefficients that
+#  come close to reproducing B.spx and B.spy.   The basic equation is that the
+#  speckle field, f, is given by f = S(a - 1), where a is the complex-valued
+#  vector that plays the role of aberrations.
+one = np.ones(Cdh.shape)
+Bspx = B.spx*B.SpeckleFactor
+Bspy = B.spy*B.SpeckleFactor
+aber = np.linalg.pinv(B.Sx)@(Bspx + B.Sx@one)
+spx = B.Sx@(aber - one)
+spy = B.Sy@(aber - one)
 
-#To get the true Jacobians of the aberrated system, we must apply the phase screen corresponding to the random coefficients we just plotted
-#Dtx = Dmx.dot(np.diag(rndco))
-#Dty = Dmy.dot(np.diag(rndco))
-#Let's compare the speckle fields from the aberrated Jacobian to the ones in the files:
-#   SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy and SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy
-#C_unity = np.ones(C_flat.shape)
-#spx = Dtx@C_unity - Dmx@C_unity # dominant speckle field
-#spy = Dty@C_unity - Dmy@C_unity # cross    speckle field
-
+plt.figure();plt.plot(np.imag(Bspx),'ko',np.imag(spx),'rx');plt.title('imag part of dominant speckle field');
+plt.figure();plt.plot(np.real(Bspx),'ko',np.real(spx),'rx');plt.title('real part of dominant speckle field');
+print('For the dominant field, the ratio of the misfit error std to the std of the true value is',
+      np.std(spx-Bspx)/np.std(Bspx))
+plt.figure();plt.plot(np.imag(Bspy),'ko',np.imag(spy),'rx');plt.title('imag part of cross speckle field');
+plt.figure();plt.plot(np.real(Bspy),'ko',np.real(spy),'rx');plt.title('real part of cross speckle field');
+print('For the cross field, the ratio of the misfit error std to the std of the true value is',
+      np.std(spy-Bspy)/np.std(Bspy))
+# %%
 
 print("Still Under Construction")

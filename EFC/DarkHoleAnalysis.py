@@ -4,7 +4,7 @@
 Created on Tue Apr  9 18:09:24 2024
 @author: rfrazin
 
-This provides analysis based on EFC class in EFC.py. 
+This provides analysis based on EFC class in EFC.py.
 It's kind of a grabbag of code lines
 
 """
@@ -20,7 +20,7 @@ ProbeIntensity = EFC.ProbeIntensity
 NegLLPoisson = EFC.NegLLPoisson
 CRB_Poisson = EFC.CRB_Poisson
 RobustPoisson = EFC.RobustPoissonRnd
-# %%  
+# %%
 
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
@@ -44,39 +44,40 @@ IYabh = B.PolIntensity(  Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=
  # %%
 
 
+SaveFigs = False
 
 plt.figure(); plt.imshow(np.log10(1.e-7 + IXnom[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Nominal Dominant PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/NomDomPSF.png', dpi=300, bbox_inches='tight')
+if SaveFigs: plt.savefig('Figs/NomDomPSF.png', dpi=300, bbox_inches='tight')
 
 plt.figure(); plt.imshow(np.log10(1.e-13 + IYnom[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Nominal Cross PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/NomCrossPSF.png', dpi=300, bbox_inches='tight')
+if SaveFigs: plt.savefig('Figs/NomCrossPSF.png', dpi=300, bbox_inches='tight')
 
 plt.figure(); plt.imshow(np.log10(1.e-7 + IXab[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Dominant PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/AbDomPSF.png', dpi=300, bbox_inches='tight')
+if SaveFigs: plt.savefig('Figs/AbDomPSF.png', dpi=300, bbox_inches='tight')
 
 plt.figure(); plt.imshow(np.log10(1.e-13+ IYab[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Cross PSF (contrast units)'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/AbCrossPSF.png', dpi=300, bbox_inches='tight')
+if SaveFigs: plt.savefig('Figs/AbCrossPSF.png', dpi=300, bbox_inches='tight')
 
 plt.figure(); plt.imshow(np.log10(1.e-7 + IXabh[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Dominant PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/AbDomPSFwHole.png', dpi=300, bbox_inches='tight')
+if SaveFigs: plt.savefig('Figs/AbDomPSFwHole.png', dpi=300, bbox_inches='tight')
 
 plt.figure(); plt.imshow(np.log10(1.e-13+ IYabh[et[2]:et[3],et[0]:et[1]]), extent=et,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Cross PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/AbCrossPSFwHole.png', dpi=300, bbox_inches='tight')
+if SaveFigs: plt.savefig('Figs/AbCrossPSFwHole.png', dpi=300, bbox_inches='tight')
 
 et2 = [ 145, 176, 145, 176]  #  for dark hole closeup
 plt.figure(); plt.imshow(np.log10(1.e-13 + IXabh[et2[2]:et2[3],et2[0]:et2[1]]), vmax=-7, extent=et2,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Dominant PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/CloseUpDomHole.png', dpi=300, bbox_inches='tight');
+if SaveFigs: plt.savefig('Figs/CloseUpDomHole.png', dpi=300, bbox_inches='tight');
 
 plt.figure(); plt.imshow(np.log10(1.e-13 + IYabh[et2[2]:et2[3],et2[0]:et2[1]]), extent=et2,cmap='seismic',origin='lower');plt.colorbar();
 plt.title('Aberrated Cross PSF (contrast units) with Hole'); plt.ylabel('pixel index'); plt.xlabel('pixel index');
-plt.savefig('Figs/CloseUpCrossHole.png', dpi=300, bbox_inches='tight');
+if SaveFigs: plt.savefig('Figs/CloseUpCrossHole.png', dpi=300, bbox_inches='tight');
 
 
 
@@ -136,7 +137,7 @@ for k1 in range(len(sols)):
         prcro3 = B.Field(Cdh + sols[k3],'Y','Hole','phase',False,SpeckleFactor=0.  ) - fmcro
         for kp in range(len(B.HolePixels)):  # pixel index
            f0  = np.array( [ftdom[ kp], ftcro[ kp]])  # true field values
-           pr1 = np.array( [prdom1[kp], prcro1[kp] ] ) # k1 probe 
+           pr1 = np.array( [prdom1[kp], prcro1[kp] ] ) # k1 probe
            pr2 = np.array( [prdom2[kp], prcro2[kp] ] ) # k2 probe
            pr3 = np.array( [prdom3[kp], prcro3[kp] ] ) # k3 probe
            s0, gs0 = ProbeIntensity(f0, 0*pr1, 'Cross', True)
@@ -148,11 +149,11 @@ for k1 in range(len(sols)):
            crb = CRB_Poisson(S, Sg)
            pk[kp] = np.max(np.diag(crb))
         metric.append(pk)
-    
+
 metric = np.array(metric)  #metric has the max CRB for each solution pair
 
 met2 = np.max(metric,axis=1); b = np.where(met2 == met2.min())[0][0]
-sol1 = sols[indlist[b][0]]; sol2 = sols[indlist[b][1]]; sol3 = sols[indlist[b][2]]  # best solution 
+sol1 = sols[indlist[b][0]]; sol2 = sols[indlist[b][1]]; sol3 = sols[indlist[b][2]]  # best solution
 
 # %%
 
@@ -163,7 +164,7 @@ sol1 = sols[indlist[b][0]]; sol2 = sols[indlist[b][1]]; sol3 = sols[indlist[b][2
 
 with open('ProbeSolutions20240905.pickle','rb') as pfpp:
     soldict = pickle.load(pfpp);
-sol1 = soldict['Best3'][0]; sol2 = sodict['Best3'][1]; sol2 = soldict['Best3'][2]
+sol1 = soldict['Best3'][0]; sol2 = soldict['Best3'][1]; sol3 = soldict['Best3'][2]
 
 f0x = B.Field(Cdh,'X','Hole','phase',False,None)*extfac  # true dom field with speckles
 f0y = B.Field(Cdh,'Y','Hole','phase',False,None)  # true cross field with speckles
@@ -189,7 +190,7 @@ std0n = np.zeros((len(B.HolePixels),2))  #  corresponding error bars
 U = 1.0*S  # array of measured intensities
 # %%
 for k in range(len(B.HolePixels)):
-# 
+#
     S[k,0], gSk0 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],
                                   [0., 0.],                         'Cross', True)  # unprobed intensity
     S[k,1], gSk1 = ProbeIntensity([sqphots*f0x[k], sqphots*f0y[k]],  #
@@ -228,9 +229,9 @@ for k in range(len(B.HolePixels)):
       else:  # mode = 'CRB'
           return CRB_Poisson(intlist, gradintlist)/sqphots  # gradintlist is in sqphots units
     #this performs a local minimization at each grid point
-# 
+#
     def GridSearchMin():
-# 
+#
         om = optimize.minimize
         fun = Poisson_CostNegLL_Or_CRB
         amps = [ np.sqrt( U[k,0]/photons) ]  #  with the dark hole + polarizers, the unprobed is all cross intensity
@@ -249,7 +250,7 @@ for k in range(len(B.HolePixels)):
                 sols.append(out['x'])
         cost = np.array(cost); sols = np.array(sols)
         sol = sols[np.argmin(cost)]
-# 
+#
         return sol[0] + 1j*sol[1]
     g0n[k] = GridSearchMin()
     cvg0n[k,:,:] = Poisson_CostNegLL_Or_CRB([np.real(g0n[k]), np.imag(g0n[k])], mode='CRB')/sqphots
@@ -257,25 +258,24 @@ for k in range(len(B.HolePixels)):
 
 
 # %%  plot estimates
-savefigs = True
 plt.figure(figsize=(7,9))
 plt.plot(np.arange(441), np.real(f0y), 'ks', markersize=8,label='Real part of true cross field');
 plt.errorbar(np.arange(441), np.real(g0n), fmt='ro', markersize=4, yerr=std0n[:, 0], label='Real part of estimated cross field');
-plt.title('Real part of cross field', fontsize=14); 
+plt.title('Real part of cross field', fontsize=14);
 plt.xlabel('pixel index (within dark hole)', fontsize=11);
 plt.ylabel('electric field ($\sqrt{\mathrm{contrast}}$ units)',fontsize=11)
 plt.legend(fontsize=12);
-if savefigs:
+if False:
   plt.savefig('Figs/RealEstimate.png', dpi=300, bbox_inches='tight');
 
 plt.figure(figsize=(7,9))
 plt.plot(np.arange(441), np.imag(f0y), 'ks', markersize=8,label='Imaginary part of true cross field');
 plt.errorbar(np.arange(441), np.imag(g0n), fmt='ro', markersize=4, yerr=std0n[:, 0], label='Imaginary part of estimated cross field');
-plt.title('Imaginary part of cross field', fontsize=14); 
+plt.title('Imaginary part of cross field', fontsize=14);
 plt.xlabel('pixel index (within dark hole)', fontsize=11);
 plt.ylabel('electric field ($\sqrt{\mathrm{contrast}}$ units)', fontsize=11)
 plt.legend(fontsize=12);
-if savefigs:
+if False:
   plt.savefig('Figs/ImagEstimate.png', dpi=300, bbox_inches='tight');
 
 
@@ -286,7 +286,7 @@ if savefigs:
 
 with open('ProbeSolutions20240905.pickle','rb') as pfpp:
     soldict = pickle.load(pfpp);
-sol1 = soldict['Best3'][0]; sol2 = sodict['Best3'][1]; sol2 = soldict['Best3'][2]
+sol1 = soldict['Best3'][0]; sol2 = soldict['Best3'][1]; sol2 = soldict['Best3'][2]
 
 pm = 1.   # positive probes
 IAhx0 = B.PolIntensity(Cdh,'X','Hole','phase',False,None)
@@ -304,7 +304,7 @@ plt.title('Probe Fields',fontsize=12)
 plt.xlabel('pixel index',fontsize=12);
 plt.ylabel('field ($\sqrt{\mathrm{constrast}}$ units)',fontsize=12);
 plt.legend();
-if savefigs:
+if False:
   plt.savefig('Figs/ManyFields.png', dpi=300, bbox_inches='tight')
 
 
@@ -339,7 +339,7 @@ if savefigs:
 #fAhx0 = A.Field(Cdh,'X','Hole','phase',False,0.)  # model dom field (no speckles)
 
 
-    # def LinearEstimator():  
+    # def LinearEstimator():
     #     sqp = sqphots/1.41421;  # this splits the exposure time between + and - probes
     #     a = [ np.real(f0y[k]) , np.imag(f0y[k]) ]
     #     I1p = ProbeIntensity( [sqp*f0x[k], sqp*(a[0] +1j*a[1])], [sqp*px1[ k], sqp*py1[ k]],'Cross', False)
@@ -354,8 +354,3 @@ if savefigs:
     #     M = photons*np.array([[ - np.imag(py1[k]), np.real(py1[k])],[-np.imag(py2[k]), np.real(py2[k])]])
     #     fyhreim = np.linalg.pinv(M).dot(q)  # estimate
     #     return(fyhreim[0] + 1j*fyhreim[1])  # phasor for estimated cross field
-
-
-
-
-
