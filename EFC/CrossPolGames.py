@@ -15,6 +15,7 @@ Before doing anything with this file, please see README.txt
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+from scipy.sparse.linalg import eigsh
 import EFC  # this module is the main one
 # %%
 # generate and instance of the EFC class.  This will simulate a coronagraph without any
@@ -123,32 +124,41 @@ In this paper optical aberrations are mimicked with a a phase and amplitude scre
 # %%
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
 #see what's in there!
-stuffB.keys()
+print(stuffB.keys())
 #this sets up the instance of the EFC class that already contains a dark for the
 #  speckle field read in by the .__init__  function
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
-
-#Since we don't have access to the original complex-valued phase screen used to create the
-#  the speckle fields (B.spx and B.spy)*SpeckleFactor, let's find a vector of spline coefficients that
+# %%
+#Let's find a vector of spline coefficients that
 #  come close to reproducing B.spx and B.spy.   The basic equation is that the
 #  speckle field, f, is given by f = S(a - 1), where a is the complex-valued
 #  vector that plays the role of aberrations.
 one = np.ones(Cdh.shape)
-Bspx = B.spx*B.SpeckleFactor
-Bspy = B.spy*B.SpeckleFactor
-aber = np.linalg.pinv(B.Sx)@(Bspx + B.Sx@one)
-spx = B.Sx@(aber - one)
-spy = B.Sy@(aber - one)
+spx = B.spx*B.SpeckleFactor  # speckle field in dom polarization
+spy = B.spy*B.SpeckleFactor  # speckle field in cross polarization
+abx = np.linalg.pinv(B.Sx)@(spx + B.Sx@one)
+aby = np.linalg.pinv(B.Sy)@(spy + B.Sy@one)
 
-plt.figure();plt.plot(np.imag(Bspx),'ko',np.imag(spx),'rx');plt.title('imag part of dominant speckle field');
-plt.figure();plt.plot(np.real(Bspx),'ko',np.real(spx),'rx');plt.title('real part of dominant speckle field');
+
+
+normx, _ = eigsh(B.Sx.T.dot(B.Sx), k=1, which='LM'); normx = np.sqrt(normx[0])
+normy, _ = eigsh(B.Sy.T.dot(B.Sy), k=1, which='LM'); normy = np.sqrt(normy[0])
+
+spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
+Sxy = np.vstack((B.Sx/normx, B.Sy/normy))  # stack the system matrices
+abxy = np.linalg.pinv(Sxy)@(spxy + Sxy@one)  # the pinv takes a minute
+rspx = B.Sx@(abxy - one)  # reconstructions of speckle fields
+rspy = B.Sy@(abxy - one)
+
+plt.figure();plt.plot(np.imag(spx),'ko',np.imag(rspx),'rx');plt.title('imag part of dominant speckle field');
+plt.figure();plt.plot(np.real(spx),'ko',np.real(rspx),'rx');plt.title('real part of dominant speckle field');
 print('For the dominant field, the ratio of the misfit error std to the std of the true value is',
-      np.std(spx-Bspx)/np.std(Bspx))
-plt.figure();plt.plot(np.imag(Bspy),'ko',np.imag(spy),'rx');plt.title('imag part of cross speckle field');
-plt.figure();plt.plot(np.real(Bspy),'ko',np.real(spy),'rx');plt.title('real part of cross speckle field');
+      np.std(rspx-spx)/np.std(spx),'.  Their correlation coefficient is', np.corrcoef(rspx,spx)[0,1]  ,  '.')
+plt.figure();plt.plot(np.imag(spy),'ko',np.imag(rspy),'rx');plt.title('imag part of cross speckle field');
+plt.figure();plt.plot(np.real(spy),'ko',np.real(rspy),'rx');plt.title('real part of cross speckle field');
 print('For the cross field, the ratio of the misfit error std to the std of the true value is',
-      np.std(spy-Bspy)/np.std(Bspy))
+      np.std(rspy-spy)/np.std(spy),'.  Their correlation coefficient is', np.corrcoef(rspy,spy)[0,1]  ,  '.')
 # %%
 
 print("Still Under Construction")
