@@ -50,10 +50,10 @@ Ic_sp = A.PolIntensity(C_flat,'Y','Full','phase',False,SpeckleFactor=1.).reshape
 plt.figure(); plt.imshow(np.log10(1.e-7  + Id_sp),cmap='seismic',origin='lower');plt.colorbar();
 plt.figure(); plt.imshow(np.log10(1.e-12 + Ic_sp),cmap='seismic',origin='lower');plt.colorbar();
 # %%
-#Now let's make up a new speckle field arising from random phases and amplitudes multiplying the CBS basis functions in the input plane
+#Now let's make up new speckle fields arising from random phases and amplitudes multiplying the CBS basis functions in the input plane
 rndphasor = 1 + 0.3*np.random.randn(len(C_flat)) + 1j*np.random.randn(len(C_flat))
-spfield_d = (A.Sx@rndphasor).reshape((256,256)) - fd
-spfield_c = (A.Sy@rndphasor).reshape((256,256)) - fc
+spfield_d = (A.Sx@rndphasor).reshape((256,256)) - fd  # dominant field
+spfield_c = (A.Sy@rndphasor).reshape((256,256)) - fc  # cross field
 plt.figure(); plt.imshow(np.imag(spfield_d),cmap='seismic',origin='lower');plt.colorbar();
 plt.figure(); plt.imshow(np.imag(spfield_c),cmap='seismic',origin='lower');plt.colorbar();
 # %%
@@ -65,6 +65,7 @@ print(stuffB.keys())  # see what's in there!
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 et = stuffB['pixel_extent']  # et phone home!
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
+extfac = stuffB['extfac_sqrt2eps']
 
 IXabh = B.PolIntensity(  Cdh,XorY='X',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
 IYabh = B.PolIntensity(  Cdh,XorY='Y',region='Full',DM_mode='phase',return_grad=False,SpeckleFactor=None).reshape((256,256))
@@ -82,10 +83,10 @@ print(soldict.keys())  # see what's in there!
 sol1 = soldict['Best3'][0]; sol2 = soldict['Best3'][1]; sol3 = soldict['Best3'][2]
 
 pm = 1.   # positive probes
-IAhx0 = B.PolIntensity(Cdh,'X','Hole','phase',False,None)
-fAhy0 = B.Field(Cdh,'Y','Hole','phase',False,0.);
-IAhx1 = B.PolIntensity(Cdh + pm*sol1,'X','Hole','phase',False,None)
-phy1p = B.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0;
+IAhx0 = B.PolIntensity(Cdh,'X','Hole','phase',False,None)  # Unprobed dominant intensity in the dark hole
+IAhx1 = B.PolIntensity(Cdh + pm*sol1,'X','Hole','phase',False,None) # dominant intensity in the dark hole with probe #1 applied
+fAhy0 = B.Field(Cdh,'Y','Hole','phase',False,0.);  # unprobed cross field in the dark hole
+phy1p = B.Field(Cdh + pm*sol1,'Y','Hole','phase',False,0.) - fAhy0  # field corresponding to probe #1
 
 
 plt.figure(figsize=(10,5)); #result of modulation with solution 1
@@ -123,38 +124,51 @@ In this paper optical aberrations are mimicked with a a phase and amplitude scre
 with open('stuff20240905.pickle','rb') as filep:  stuffB= pickle.load(filep)
 #see what's in there!
 print(stuffB.keys())
+with open('ProbeSolutions20240905.pickle','rb') as pfpp:
+    soldict = pickle.load(pfpp);
+print(soldict.keys())  # see what's in there!
+sol1 = soldict['Best3'][0]; sol2 = soldict['Best3'][1]; sol3 = soldict['Best3'][2]
+solnames = ["sol1", "sol2", "sol3"]
+
 #this sets up the instance of the EFC class that already contains a dark for the
 #  speckle field read in by the .__init__  function
 B = EFC.EFC(HolePixels=stuffB['HolePixels'], SpeckleFactor=stuffB['SpeckleFactor'])
 Cdh = stuffB['DHcmd']  # dark hole command for dominant field
 # %%
 
-#First, let's trim the various vectors and matrices to the good park of the image.
-goodpix = EFC.MakePixList([45,210,45,210] ,(256,256))  # the spline model has problems outside of this region  due to high frequency errors (my guess is that the Lyot stop does this)
+#First, let's trim the various vectors and matrices to the interior part of the image.
+goodpix = EFC.MakePixList([59,196,59,196] ,(256,256))  # the spline model has problems outside of this region  due to high frequency errors (my guess is that the Lyot stop does this)
 Sx = np.zeros((len(goodpix),len(Cdh))).astype('complex')
 Sy = np.zeros((len(goodpix),len(Cdh))).astype('complex')
 spx = np.zeros((len(goodpix),)).astype('complex')
 spy = np.zeros((len(goodpix),)).astype('complex')
 count = -1
-for k in range(B.Sx.shape[0]):  # loop over rows
+for k in range(B.Sx.shape[0]):  # loop over rows (each column is an image in vector form)
    if k in goodpix:
       count += 1
       Sx[count, :] = B.Sx[k,:]
       Sy[count, :] = B.Sy[k,:]
       spx[count] = B.spx[k]*B.SpeckleFactor  # speckle field in dom polarization
       spy[count] = B.spy[k]*B.SpeckleFactor  # speckle field in cross polarization
+#In the paper simulations, the speckle field the dark hole command does not
+#  alter the speckle field.  This is OK for the purposes of showing the estimation
+#  works because the choice of speckle field is fairly arbitrary.
+Sx = Sx.dot(np.diag(np.exp(1j*Cdh)))  # apply the dark hole command to the system matrices
+Sy = Sy.dot(np.diag(np.exp(1j*Cdh)))
+
 
 # %%
 #Let's find a vector of spline coefficients that
-#  come close to reproducing B.spx and B.spy.   The basic equation is that the
-#  speckle field, f, is given by f = S(a - 1), where a is the complex-valued
-#  vector that plays the role of aberrations.
+#  comes close to reproducing the speckle field (B.spx and B.spy).   The basic equation is that the
+#  speckle field, f, is given by f = S(a - one), where a is the complex-valued
+#  vector that plays the role of aberrations and 'one' is vector of ones, and
+#  S is the system matrix
 one = np.ones(Cdh.shape)
 #abx = np.linalg.pinv(B.Sx)@(spx + B.Sx@one)
 #aby = np.linalg.pinv(B.Sy)@(spy + B.Sy@one)
 
-normx, _ = eigsh(Sx.T.dot(Sx), k=1, which='LM'); normx = np.sqrt(normx[0])
-normy, _ = eigsh(Sy.T.dot(Sy), k=1, which='LM'); normy = np.sqrt(normy[0])
+normx, _ = eigsh(np.conj(Sx.T).dot(Sx), k=1, which='LM'); normx = np.sqrt(normx[0])  # largest SV
+normy, _ = eigsh(np.conj(Sy.T).dot(Sy), k=1, which='LM'); normy = np.sqrt(normy[0])  # largest SV
 
 spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
 Sxy = np.vstack((Sx/normx, Sy/normy))  # stack the system matrices
@@ -162,6 +176,7 @@ abxy = np.linalg.pinv(Sxy)@(spxy + Sxy@one)  # the pinv takes a minute
 rspx = Sx@(abxy - one)  # reconstructions of speckle fields
 rspy = Sy@(abxy - one)
 
+# %%
 plt.figure();plt.plot(np.imag(spx),'ko',np.imag(rspx),'rx');plt.title('imag part of dominant speckle field');
 plt.figure();plt.plot(np.real(spx),'ko',np.real(rspx),'rx');plt.title('real part of dominant speckle field');
 plt.figure();plt.plot(np.imag(spy),'ko',np.imag(rspy),'rx');plt.title('imag part of cross speckle field');
@@ -185,23 +200,25 @@ print('The ratio of the misfit error std to the std of the true value is', np.st
 #while this set of aberration coefficients does not provide a prefect match to the
 #  the speckle fields, it provides speckles that are similar to the real ones and thus
 #  should be adequate for testing the Jacobian.
-Sx = Sx.dot(np.diag(np.exp(1j*Cdh)))  # apply the dark hole command
-Sy = Sy.dot(np.diag(np.exp(1j*Cdh)))
 
 Sx_ab = Sx.dot(np.diag(abxy))  # apply the aberration found above to the system matrices
 Sy_ab = Sy.dot(np.diag(abxy))
 
-with open('ProbeSolutions20240905.pickle','rb') as pfpp:
-    soldict = pickle.load(pfpp);
-print(soldict.keys())  # see what's in there!
-sol1 = soldict['Best3'][0]; sol2 = soldict['Best3'][1]; sol3 = soldict['Best3'][2]
-solnames = ["sol1", "sol2", "sol3"]
 for soln in solnames:
     sol = globals()[soln]  # Access the global variables dynamically.  Note: the function globals() returns a dictionary of the global name space
+    modeldomprobe = Sx@(sol - one)
+    truedomprobe = Sx_ab@(sol - one)
+    modelcrossprobe = Sy@(sol - one)
+    truecrosseprobe = Sy_ab@(sol - one)
+
     plt.figure();
-    plt.plot(np.real(Sx_ab@(sol - one)), 'bo', label = 'true probe value');
-    plt.plot(np.real(Sx@(sol - one)), 'rx', label='model probe value');
+    plt.plot(np.real(truedomprobe), 'bo', label = 'true dominant probe value');
+    plt.plot(np.real(modeldomprobe), 'rx', label='model dominant probe value');
     plt.title(soln +': real part'); plt.legend()
+    plt.figure();
+    plt.plot(np.imag(truedomprobe), 'bo', label = 'true cross probe value');
+    plt.plot(np.imag(modeldomprobe), 'rx', label='model cross probe value');
+    plt.title(soln +': imaginary part'); plt.legend()
 
 
 
