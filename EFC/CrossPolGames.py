@@ -162,7 +162,8 @@ Sy = Sy.dot(np.diag(np.exp(1j*Cdh)))
 # comes close to reproducing the speckle field (spx and spy).   The basic equation is that the
 # speckle field, f, is given by f = S a, where a is the complex-valued
 # vector that plays the role of aberrations and S is the system matrix.  Note this model is equivalent
-# to f = S (a + o) - S o , where o is vector of ones, so a represents perturbations from unity.
+# to f = S (a + one) - S one , where one is vector of ones, so a represents perturbations from unity.
+#Thus, the aberrated system matrix responsible for this specklefield is S.dot(np.diag(a + one))
 
 abx = np.linalg.pinv(Sx)@spx
 aby = np.linalg.pinv(Sy)@spy
@@ -203,15 +204,15 @@ print('The ratio of the misfit error std to the std of the true value is', np.st
 #  the speckle fields, it provides speckles that are similar to the real ones and thus
 #  should be adequate for testing the Jacobian.
 
-Sx_ab = Sx.dot(np.diag(abxy))  # apply the aberration found above to the system matrices
-Sy_ab = Sy.dot(np.diag(abxy))
-
+Sx_ab = Sx.dot(np.diag(abxy + 1.))  # apply the aberration found above to the system matrices
+Sy_ab = Sy.dot(np.diag(abxy + 1.))
+# %%
 for soln in solnames:
     sol = globals()[soln]  # Access the global variables dynamically.  Note: the function globals() returns a dictionary of the global name space
-    modeldomprobe   = Sx@(   sol )
-    truedomprobe    = Sx_ab@(sol )
-    modelcrossprobe = Sy@(   sol )
-    truecrosseprobe = Sy_ab@(sol )
+    modeldomprobe   = Sx@(    sol - 1.)
+    truedomprobe    = Sx_ab@( sol - 1.)
+    modelcrossprobe = Sy@(    sol - 1.)
+    truecrossprobe  = Sy_ab@( sol - 1.)
 
     plt.figure();
     plt.plot(np.real(truedomprobe), 'bo', label = 'true dominant probe value');
@@ -221,6 +222,22 @@ for soln in solnames:
     plt.plot(np.imag(truedomprobe), 'bo', label = 'true cross probe value');
     plt.plot(np.imag(modeldomprobe), 'rx', label='model cross probe value');
     plt.title(soln +': imaginary part'); plt.legend()
+
+    print(soln,":")
+
+    print("dominant probe, real part:")
+    print('The ratio of the misfit error std to the std of the true value is', np.std(np.real(modeldomprobe-truedomprobe))/np.std(np.real(truedomprobe)),
+         '.  Their correlation coefficient is', np.corrcoef(np.real(modeldomprobe),np.real(truedomprobe))[0,1]  ,  '.')
+    print("dominant probe, imag part:")
+    print('The ratio of the misfit error std to the std of the true value is', np.std(np.imag(modeldomprobe-truedomprobe))/np.std(np.imag(truedomprobe)),
+         '.  Their correlation coefficient is', np.corrcoef(np.imag(modeldomprobe),np.imag(truedomprobe))[0,1]  ,  '.')
+
+    print("cross probe, real part:")
+    print('The ratio of the misfit error std to the std of the true value is', np.std(np.real(modelcrossprobe-truecrossprobe))/np.std(np.real(truecrossprobe)),
+         '.  Their correlation coefficient is', np.corrcoef(np.real(modelcrossprobe),np.real(truecrossprobe))[0,1]  ,  '.')
+    print("cross probe, imag part:")
+    print('The ratio of the misfit error std to the std of the true value is', np.std(np.imag(modelcrossprobe-truecrossprobe))/np.std(np.imag(truecrossprobe)),
+         '.  Their correlation coefficient is', np.corrcoef(np.imag(modelcrossprobe),np.imag(truecrossprobe))[0,1]  ,  '.')
 
 
 
