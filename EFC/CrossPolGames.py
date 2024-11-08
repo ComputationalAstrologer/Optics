@@ -159,22 +159,24 @@ Sy = Sy.dot(np.diag(np.exp(1j*Cdh)))
 
 # %%
 #Let's find a vector of spline coefficients that
-#  comes close to reproducing the speckle field (B.spx and B.spy).   The basic equation is that the
-#  speckle field, f, is given by f = S(a - one), where a is the complex-valued
-#  vector that plays the role of aberrations and 'one' is vector of ones, and
-#  S is the system matrix
-one = np.ones(Cdh.shape)
-#abx = np.linalg.pinv(B.Sx)@(spx + B.Sx@one)
-#aby = np.linalg.pinv(B.Sy)@(spy + B.Sy@one)
+# comes close to reproducing the speckle field (spx and spy).   The basic equation is that the
+# speckle field, f, is given by f = S a, where a is the complex-valued
+# vector that plays the role of aberrations and S is the system matrix.  Note this model is equivalent
+# to f = S (a + o) - S o , where o is vector of ones, so a represents perturbations from unity.
 
-normx, _ = eigsh(np.conj(Sx.T).dot(Sx), k=1, which='LM'); normx = np.sqrt(normx[0])  # largest SV
-normy, _ = eigsh(np.conj(Sy.T).dot(Sy), k=1, which='LM'); normy = np.sqrt(normy[0])  # largest SV
+abx = np.linalg.pinv(Sx)@spx
+aby = np.linalg.pinv(Sy)@spy
+abxy = (abx + aby)/2  # I don't have better idea.  See below.
 
-spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
-Sxy = np.vstack((Sx/normx, Sy/normy))  # stack the system matrices
-abxy = np.linalg.pinv(Sxy)@(spxy + Sxy@one)  # the pinv takes a minute
-rspx = Sx@(abxy - one)  # reconstructions of speckle fields
-rspy = Sy@(abxy - one)
+#For reasons I don't understand, this scheme of weighting the two systems by their largest
+#  singular values leads to large values of abxy that are not useful.
+#normx, _ = eigsh(np.conj(Sx.T).dot(Sx), k=1, which='LM'); normx = np.sqrt(normx[0])  # largest SV
+#normy, _ = eigsh(np.conj(Sy.T).dot(Sy), k=1, which='LM'); normy = np.sqrt(normy[0])  # largest SV
+#spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
+#Sxy = np.vstack((Sx/normx, Sy/normy))  # stack the system matrices
+#abxy = np.linalg.pinv(Sxy)@(spxy)  # the pinv takes a minute
+rspx = Sx@(abxy)  # reconstructions of speckle fields
+rspy = Sy@(abxy)
 
 # %%
 plt.figure();plt.plot(np.imag(spx),'ko',np.imag(rspx),'rx');plt.title('imag part of dominant speckle field');
@@ -206,10 +208,10 @@ Sy_ab = Sy.dot(np.diag(abxy))
 
 for soln in solnames:
     sol = globals()[soln]  # Access the global variables dynamically.  Note: the function globals() returns a dictionary of the global name space
-    modeldomprobe = Sx@(sol - one)
-    truedomprobe = Sx_ab@(sol - one)
-    modelcrossprobe = Sy@(sol - one)
-    truecrosseprobe = Sy_ab@(sol - one)
+    modeldomprobe   = Sx@(   sol )
+    truedomprobe    = Sx_ab@(sol )
+    modelcrossprobe = Sy@(   sol )
+    truecrosseprobe = Sy_ab@(sol )
 
     plt.figure();
     plt.plot(np.real(truedomprobe), 'bo', label = 'true dominant probe value');
