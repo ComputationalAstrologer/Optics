@@ -15,10 +15,11 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 
-# 2. Define the UNet Model
+in_channels = 2; out_channels = 2  # the images are complex valued.
+# Define the UNet Model
 class UNet(nn.Module):
     def __init__(self, in_channels, out_channels):
-        super(UNet, self).__init__()
+        super().__init__()
 
         # Encoder
         self.enc1 = self.conv_block(in_channels, 64)
@@ -211,41 +212,3 @@ def visualize_results(model, input_image, target_image):
     axs[2].set_title('Predicted Image (Real part)')
 
     plt.show()
-
-# 7. Example Usage: Initialize, Train, Save, and Load
-if __name__ == "__main__":
-    # Example data (replace with actual dataset)
-    N = 100  # Number of images
-    H, W = 256, 256  # Image dimensions
-    input_images = np.random.randn(N, 2, H, W).astype(np.float32)  # Random complex input images
-    target_images = np.random.randn(N, 2, H, W).astype(np.float32)  # Random complex target images
-
-    # Hyperparameters and configuration
-    in_channels = 2  # Real and imaginary parts
-    out_channels = 2  # Real and imaginary parts
-    learning_rate = 1e-4
-    epochs = 20
-    checkpoint_dir = './checkpoints'  # Directory to save checkpoints
-    checkpoint_freq = 5  # Save every 5 epochs
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Initialize the model and optimizer
-    model = UNet(in_channels=in_channels, out_channels=out_channels).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.MSELoss()
-
-    # Create DataLoader
-    dataset = ComplexImageDataSet(input_images, target_images)
-    train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
-
-    # Train the model and save checkpoints
-    train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_dir, checkpoint_freq)
-
-    # Optionally, save the final model for inference
-    save_model_for_inference(model, './final_model.pth')
-
-    # After training, visualize results for the first image in the dataset
-    input_image = torch.tensor(input_images[0:1]).to(device)  # Get the first image
-    target_image = torch.tensor(target_images[0:1]).to(device)  # Get the first target
-
-    visualize_results(model, input_image, target_image)
