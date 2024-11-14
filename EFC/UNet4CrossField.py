@@ -15,6 +15,11 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 
+if not torch.cuda.is_available():
+   print("Read the Sign.  No GPU, No Service!")
+   assert False
+device = torch.device('cuda')
+
 in_channels = 2; out_channels = 2  # the images are complex valued.
 # Define the UNet Model
 class UNet(nn.Module):
@@ -22,22 +27,22 @@ class UNet(nn.Module):
         super().__init__()
 
         # Encoder
-        self.enc1 = self.conv_block(in_channels, 64)
-        self.enc2 = self.conv_block(64, 128)
-        self.enc3 = self.conv_block(128, 256)
-        self.enc4 = self.conv_block(256, 512)
+        self.enc1 = self.conv_block(in_channels, 32)
+        self.enc2 = self.conv_block(32, 64)
+        self.enc3 = self.conv_block(64, 128)
+        self.enc4 = self.conv_block(128, 256)
 
         # Bottleneck
-        self.bottleneck = self.conv_block(512, 1024)
+        self.bottleneck = self.conv_block(256, 512)
 
         # Decoder
-        self.dec4 = self.conv_block(1024, 512)
-        self.dec3 = self.conv_block(512, 256)
-        self.dec2 = self.conv_block(256, 128)
-        self.dec1 = self.conv_block(128, 64)
+        self.dec4 = self.conv_block(512, 256)
+        self.dec3 = self.conv_block(256, 128)
+        self.dec2 = self.conv_block(128, 64)
+        self.dec1 = self.conv_block(64, 32)
 
         # Output layer
-        self.out_conv = nn.Conv2d(64, out_channels, kernel_size=1)
+        self.out_conv = nn.Conv2d(32, out_channels, kernel_size=1)
 
     def conv_block(self, in_channels, out_channels):
         return nn.Sequential(
