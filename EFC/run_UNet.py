@@ -34,6 +34,7 @@ epochs = 20
 checkpoint_dir = './checkpoints'  # Directory to save checkpoints
 checkpoint_freq = 5  # Save every 5 epochs
 device = torch.device('cuda')
+# %%
 
 # Initialize the model and optimizer
 model = UN.UNet(in_channels=in_channels, out_channels=out_channels).to(device)

@@ -21,64 +21,114 @@ if not torch.cuda.is_available():
 device = torch.device('cuda')
 
 in_channels = 2; out_channels = 2  # the images are complex valued.
-# Define the UNet Model
+# Define the UNet Modelclass UNet(nn.Module):
 class UNet(nn.Module):
     def __init__(self, in_channels, out_channels):
-        super().__init__()
+       super().__init__()
 
-        # Encoder
-        self.enc1 = self.conv_block(in_channels, 32)
-        self.enc2 = self.conv_block(32, 64)
-        self.enc3 = self.conv_block(64, 128)
-        self.enc4 = self.conv_block(128, 256)
+       # Encoder with modified channels and larger kernels
+       self.enc1 = self.conv_block(in_channels, 16, kernel_size=5)
+       self.enc2 = self.conv_block(16, 32, kernel_size=5)
+       self.enc3 = self.conv_block(32, 64, kernel_size=3)
+       self.enc4 = self.conv_block(64, 128, kernel_size=3)
 
-        # Bottleneck
-        self.bottleneck = self.conv_block(256, 512)
+       # Bottleneck
+       self.bottleneck = self.conv_block(128, 64, kernel_size=3)
 
-        # Decoder
-        self.dec4 = self.conv_block(512, 256)
-        self.dec3 = self.conv_block(256, 128)
-        self.dec2 = self.conv_block(128, 64)
-        self.dec1 = self.conv_block(64, 32)
+       # Decoder with skip connections and reduced channels
+       self.dec3 = self.conv_block(128, 64, kernel_size=3)
+       self.dec2 = self.conv_block(64, 32, kernel_size=3)
+       self.dec1 = self.conv_block(32, 16, kernel_size=3)
 
-        # Output layer
-        self.out_conv = nn.Conv2d(32, out_channels, kernel_size=1)
+       # Output layer
+       self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
 
-    def conv_block(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True)
-        )
+    def conv_block(self, in_channels, out_channels, kernel_size=3):
+      """Basic convolution block with optional kernel size adjustment"""
+      return nn.Sequential(
+       nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+       nn.ReLU(inplace=True),
+       nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2), nn.ReLU(inplace=True))
 
     def forward(self, x):
-        # Encoder
-        enc1 = self.enc1(x)
-        enc2 = self.enc2(F.max_pool2d(enc1, 2))
-        enc3 = self.enc3(F.max_pool2d(enc2, 2))
-        enc4 = self.enc4(F.max_pool2d(enc3, 2))
+      enc1 = self.enc1(x)
+      enc2 = self.enc2(F.max_pool2d(enc1, 2))
+      enc3 = self.enc3(F.max_pool2d(enc2, 2))
+      enc4 = self.enc4(F.max_pool2d(enc3, 2))
 
-        # Bottleneck
-        bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
+      bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
 
-        # Decoder
-        dec4 = self.dec4(F.interpolate(bottleneck, scale_factor=2, mode='bilinear', align_corners=False))
-        dec4 = torch.cat([dec4, enc4], dim=1)
-        dec3 = self.dec3(F.interpolate(dec4, scale_factor=2, mode='bilinear', align_corners=False))
-        dec3 = torch.cat([dec3, enc3], dim=1)
-        dec2 = self.dec2(F.interpolate(dec3, scale_factor=2, mode='bilinear', align_corners=False))
-        dec2 = torch.cat([dec2, enc2], dim=1)
-        dec1 = self.dec1(F.interpolate(dec2, scale_factor=2, mode='bilinear', align_corners=False))
-        dec1 = torch.cat([dec1, enc1], dim=1)
+      dec3 = self.dec3(F.interpolate(bottleneck, scale_factor=2, mode='bilinear', align_corners=False))
+      dec3 = torch.cat([dec3, enc4], dim=1)
 
-        # Output layer
-        out = self.out_conv(dec1)
-        return out
+      dec2 = self.dec2(F.interpolate(dec3, scale_factor=2, mode='bilinear', align_corners=False))
+      dec2 = torch.cat([dec2, enc3], dim=1)
 
-# 3. Define the Complex Image Dataset Class
+      dec1 = self.dec1(F.interpolate(dec2, scale_factor=2, mode='bilinear', align_corners=False))
+      dec1 = torch.cat([dec1, enc2], dim=1)
+
+      out = self.out_conv(dec1)
+      return out
+
+
 class ComplexImageDataSet(torch.utils.data.Dataset):
     def __init__(self, input_images, target_images, transform=None):
+        """
+        Args:
+            input_images (array-like or tensor): Complex-valued input images.
+            target_images (array-like or tensor): Complex-valued target images.
+            transform (callable, optional): Optional transform to be applied to the input and target.
+        """
+        self.input_images = input_images  # List or array of complex-valued input images
+        self.target_images = target_images  # List or array of complex-valued target images
+        self.transform = transform  # Transform function to be applied to each image (input & target)
+
+    def __len__(self):
+        """Return the total number of samples in the dataset"""
+        return len(self.input_images)
+
+    def __getitem__(self, idx):
+        """
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            input_img (tensor): A tensor of shape (2, H, W) where the first channel is the real part,
+                                 and the second channel is the imaginary part.
+            target_img (tensor): Same as input_img but for the target image.
+        """
+        input_img = self.input_images[idx]  # Get the complex-valued input image
+        target_img = self.target_images[idx]  # Get the complex-valued target image
+
+
+        # Check the shape of the images before stacking
+        print("Input image shape before stacking:", input_img.shape)
+        print("Target image shape before stacking:", target_img.shape)
+
+
+        # Convert the complex-valued images into two-channel tensors (real and imaginary)
+        input_real =  torch.tensor(input_img.real)
+        input_imag =  torch.tensor(input_img.imag)
+        target_real = torch.tensor(target_img.real)
+        target_imag = torch.tensor(target_img.imag)
+
+        # Stack the real and imaginary parts into a single tensor with shape (2, H, W)
+        input_img = torch.stack([input_real, input_imag], dim=0)  # (2, H, W)
+        target_img = torch.stack([target_real, target_imag], dim=0)  # (2, H, W)
+        # Ensure the shape is [batch_size, channels, height, width]
+        input_img = input_img.unsqueeze(0)  # Adds a batch dimension, so shape is (1, 2, H, W)
+        target_img = target_img.unsqueeze(0)  # Adds a batch dimension, so shape is (1, 2, H, W)
+
+        # Apply any transformations (if provided)
+        if self.transform:
+            input_img, target_img = self.transform(input_img, target_img)
+
+        return input_img, target_img
+
+# Define the Complex Image Dataset Class
+class __ComplexImageDataSet(torch.utils.data.Dataset):
+    def __init__(self, input_images, target_images, transform=None):
+        assert False  # doesn't convert to torch arrays
         """
         Args:
             input_images (array-like or tensor): Complex-valued input images.
@@ -170,7 +220,7 @@ def train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_di
         running_loss = 0.0
 
         for inputs, targets in train_loader:
-            inputs, targets = inputs.to(device), targets.to(device)
+            inputs, targets = inputs.to(device).float(), targets.to(device).float()
 
             # Forward pass
             outputs = model(inputs)
