@@ -21,8 +21,85 @@ if not torch.cuda.is_available():
 device = torch.device('cuda')
 
 in_channels = 2; out_channels = 2  # the images are complex valued.
-# Define the UNet Modelclass UNet(nn.Module):
-class UNet(nn.Module):
+
+class UNetWithSkip(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+
+        # Encoder with modified channels and larger kernels
+        self.enc1 = self.conv_block(in_channels, 16, kernel_size=5)
+        self.enc2 = self.conv_block(16, 32, kernel_size=5)
+        self.enc3 = self.conv_block(32, 64, kernel_size=3)
+        self.enc4 = self.conv_block(64, 128, kernel_size=3)
+
+        # Bottleneck
+        self.bottleneck = self.conv_block(128, 64, kernel_size=3)
+
+        # Decoder with skip connections
+        self.dec3 = self.conv_block(128, 64, kernel_size=3)  # Skip connection added
+        self.dec2 = self.conv_block(64 + 32, 32, kernel_size=3)  # Skip connection added
+        self.dec1 = self.conv_block(32 + 16, 16, kernel_size=3)  # Skip connection added
+
+        # Output layer
+        self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
+
+    def conv_block(self, in_channels, out_channels, kernel_size=3):
+        """Basic convolution block with optional kernel size adjustment"""
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        debug = True
+        if debug:
+            print(f"Input shape: {x.shape}")
+
+        # Encoder
+        enc1 = self.enc1(x)
+        if debug:
+            print(f"After enc1: {enc1.shape}")
+        enc2 = self.enc2(F.max_pool2d(enc1, 2))
+        if debug:
+            print(f"After enc2: {enc2.shape}")
+        enc3 = self.enc3(F.max_pool2d(enc2, 2))
+        if debug:
+            print(f"After enc3: {enc3.shape}")
+        enc4 = self.enc4(F.max_pool2d(enc3, 2))
+        if debug:
+            print(f"After enc4: {enc4.shape}")
+
+        # Bottleneck
+        bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
+        if debug:
+            print(f"After bottleneck: {bottleneck.shape}")
+
+        # Decoder with skip connections
+        dec3 = self.dec3(F.interpolate(bottleneck, size=enc4.shape[2:], mode='bilinear', align_corners=False))
+        dec3 = torch.cat([dec3, enc4], dim=1)  # Concatenate skip connection from enc4
+        if debug:
+            print(f"After dec3 (upscaled and concatenated with enc4): {dec3.shape}")
+
+        dec2 = self.dec2(F.interpolate(dec3, size=enc3.shape[2:], mode='bilinear', align_corners=False))
+        dec2 = torch.cat([dec2, enc3], dim=1)  # Concatenate skip connection from enc3
+        if debug:
+            print(f"After dec2 (upscaled and concatenated with enc3): {dec2.shape}")
+
+        dec1 = self.dec1(F.interpolate(dec2, size=enc2.shape[2:], mode='bilinear', align_corners=False))
+        dec1 = torch.cat([dec1, enc2], dim=1)  # Concatenate skip connection from enc2
+        if debug:
+            print(f"After dec1 (upscaled and concatenated with enc2): {dec1.shape}")
+
+        # Output
+        out = self.out_conv(dec1)
+        if debug:
+            print(f"Output shape: {out.shape}")
+
+        return out
+
+class UNetNoSkip(nn.Module):
     def __init__(self, in_channels, out_channels):
        super().__init__()
 
@@ -35,8 +112,8 @@ class UNet(nn.Module):
        # Bottleneck
        self.bottleneck = self.conv_block(128, 64, kernel_size=3)
 
-       # Decoder with skip connections and reduced channels
-       self.dec3 = self.conv_block(128, 64, kernel_size=3)
+       # Decoder with reduced channels (no skip connections)
+       self.dec3 = self.conv_block(64, 64, kernel_size=3)  # Pas de concaténation
        self.dec2 = self.conv_block(64, 32, kernel_size=3)
        self.dec1 = self.conv_block(32, 16, kernel_size=3)
 
@@ -44,32 +121,55 @@ class UNet(nn.Module):
        self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
 
     def conv_block(self, in_channels, out_channels, kernel_size=3):
-      """Basic convolution block with optional kernel size adjustment"""
-      return nn.Sequential(
-       nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
-       nn.ReLU(inplace=True),
-       nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2), nn.ReLU(inplace=True))
+       """Basic convolution block with optional kernel size adjustment"""
+       return nn.Sequential(
+           nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+           nn.ReLU(inplace=True),
+           nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+           nn.ReLU(inplace=True)
+       )
 
     def forward(self, x):
-      enc1 = self.enc1(x)
-      enc2 = self.enc2(F.max_pool2d(enc1, 2))
-      enc3 = self.enc3(F.max_pool2d(enc2, 2))
-      enc4 = self.enc4(F.max_pool2d(enc3, 2))
+       debug = False
+       if debug:
+           print(f"Input shape: {x.shape}")
 
-      bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
+       # Encoder
+       enc1 = self.enc1(x)
+       if debug:
+           print(f"After enc1: {enc1.shape}")
+       enc2 = self.enc2(F.max_pool2d(enc1, 2))
+       if debug:
+           print(f"After enc2: {enc2.shape}")
+       enc3 = self.enc3(F.max_pool2d(enc2, 2))
+       if debug:
+           print(f"After enc3: {enc3.shape}")
+       enc4 = self.enc4(F.max_pool2d(enc3, 2))
+       if debug:
+           print(f"After enc4: {enc4.shape}")
 
-      dec3 = self.dec3(F.interpolate(bottleneck, scale_factor=2, mode='bilinear', align_corners=False))
-      dec3 = torch.cat([dec3, enc4], dim=1)
+       # Bottleneck
+       bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
+       if debug:
+           print(f"After bottleneck: {bottleneck.shape}")
 
-      dec2 = self.dec2(F.interpolate(dec3, scale_factor=2, mode='bilinear', align_corners=False))
-      dec2 = torch.cat([dec2, enc3], dim=1)
+       # Decoder (sans skip connections)
+       dec3 = self.dec3(F.interpolate(bottleneck, size=(7,7), mode='bilinear', align_corners=False))
+       if debug:
+           print(f"After dec3 (upscaled): {dec3.shape}")
+       dec2 = self.dec2(F.interpolate(dec3, size=(15,15), mode='bilinear', align_corners=False))
+       if debug:
+           print(f"After dec2 (upscaled): {dec2.shape}")
+       dec1 = self.dec1(F.interpolate(dec2, size=(31,31), mode='bilinear', align_corners=False))
+       if debug:
+           print(f"After dec1 (upscaled): {dec1.shape}")
 
-      dec1 = self.dec1(F.interpolate(dec2, scale_factor=2, mode='bilinear', align_corners=False))
-      dec1 = torch.cat([dec1, enc2], dim=1)
+       # Output
+       out = self.out_conv(dec1)
+       if debug:
+           print(f"Output shape: {out.shape}")
 
-      out = self.out_conv(dec1)
-      return out
-
+       return out
 
 class ComplexImageDataSet(torch.utils.data.Dataset):
     def __init__(self, input_images, target_images, transform=None):
@@ -88,91 +188,46 @@ class ComplexImageDataSet(torch.utils.data.Dataset):
         return len(self.input_images)
 
     def __getitem__(self, idx):
-        """
-        Args:
-            idx (int): Index of the sample to retrieve.
+       """
+       Args:
+           idx (int): Index of the sample to retrieve.
 
-        Returns:
-            input_img (tensor): A tensor of shape (2, H, W) where the first channel is the real part,
-                                 and the second channel is the imaginary part.
-            target_img (tensor): Same as input_img but for the target image.
-        """
-        input_img = self.input_images[idx]  # Get the complex-valued input image
-        target_img = self.target_images[idx]  # Get the complex-valued target image
+       Returns:
+           input_img (tensor): A tensor of shape (2, H, W) where the first channel is the real part,
+                                and the second channel is the imaginary part.
+           target_img (tensor): Same as input_img but for the target image.
+       """
+       debug = False
+       input_img = self.input_images[idx]  # Get the complex-valued input image
+       target_img = self.target_images[idx]  # Get the complex-valued target image
+
+       # Check the shape of the images before stacking
+       if debug:
+           print("Input image shape before stacking:", input_img.shape)
+           print("Target image shape before stacking:", target_img.shape)
+
+       # Convert the complex-valued images into two-channel tensors (real and imaginary)
+       input_real = torch.tensor(input_img[0,:,:])
+       input_imag = torch.tensor(input_img[1,:,:])
+       target_real = torch.tensor(target_img[0,:,:])
+       target_imag = torch.tensor(target_img[1,:,:])
+
+       input_img = torch.stack([input_real, input_imag], dim=0)  # Correctly create a tensor with shape [2, H, W]
+       target_img = torch.stack([target_real, target_imag], dim=0)  # Same for target
+
+       # Check shapes after concatenation
+       if debug:
+           print("Input shape after torch.stack:", input_img.shape)
+           print("Target shape after torch.stack:", target_img.shape)
+
+       # Apply any transformations (if provided)
+       if self.transform:
+           input_img, target_img = self.transform(input_img, target_img)
+
+       return input_img, target_img
 
 
-        # Check the shape of the images before stacking
-        print("Input image shape before stacking:", input_img.shape)
-        print("Target image shape before stacking:", target_img.shape)
-
-
-        # Convert the complex-valued images into two-channel tensors (real and imaginary)
-        input_real =  torch.tensor(input_img.real)
-        input_imag =  torch.tensor(input_img.imag)
-        target_real = torch.tensor(target_img.real)
-        target_imag = torch.tensor(target_img.imag)
-
-        # Stack the real and imaginary parts into a single tensor with shape (2, H, W)
-        input_img = torch.stack([input_real, input_imag], dim=0)  # (2, H, W)
-        target_img = torch.stack([target_real, target_imag], dim=0)  # (2, H, W)
-        # Ensure the shape is [batch_size, channels, height, width]
-        input_img = input_img.unsqueeze(0)  # Adds a batch dimension, so shape is (1, 2, H, W)
-        target_img = target_img.unsqueeze(0)  # Adds a batch dimension, so shape is (1, 2, H, W)
-
-        # Apply any transformations (if provided)
-        if self.transform:
-            input_img, target_img = self.transform(input_img, target_img)
-
-        return input_img, target_img
-
-# Define the Complex Image Dataset Class
-class __ComplexImageDataSet(torch.utils.data.Dataset):
-    def __init__(self, input_images, target_images, transform=None):
-        assert False  # doesn't convert to torch arrays
-        """
-        Args:
-            input_images (array-like or tensor): Complex-valued input images.
-            target_images (array-like or tensor): Complex-valued target images.
-            transform (callable, optional): Optional transform to be applied to the input and target.
-        """
-        self.input_images = input_images  # List or array of complex-valued input images
-        self.target_images = target_images  # List or array of complex-valued target images
-        self.transform = transform  # Transform function to be applied to each image (input & target)
-
-    def __len__(self):
-        """Return the total number of samples in the dataset"""
-        return len(self.input_images)
-
-    def __getitem__(self, idx):
-        """
-        Args:
-            idx (int): Index of the sample to retrieve.
-
-        Returns:
-            input_img (tensor): A tensor of shape (2, H, W) where the first channel is the real part,
-                                 and the second channel is the imaginary part.
-            target_img (tensor): Same as input_img but for the target image.
-        """
-        input_img = self.input_images[idx]  # Get the complex-valued input image
-        target_img = self.target_images[idx]  # Get the complex-valued target image
-
-        # Convert the complex-valued images into two-channel tensors (real and imaginary)
-        input_real = input_img.real
-        input_imag = input_img.imag
-        target_real = target_img.real
-        target_imag = target_img.imag
-
-        # Stack the real and imaginary parts into a single tensor with shape (2, H, W)
-        input_img = torch.stack([input_real, input_imag], dim=0)  # (2, H, W)
-        target_img = torch.stack([target_real, target_imag], dim=0)  # (2, H, W)
-
-        # Apply any transformations (if provided)
-        if self.transform:
-            input_img, target_img = self.transform(input_img, target_img)
-
-        return input_img, target_img
-
-# 4. Helper Functions for Saving and Loading Checkpoints and Models
+#  Helper Functions for Saving and Loading Checkpoints and Models
 def save_checkpoint(model, optimizer, epoch, loss, filepath):
     """
     Save the model and optimizer state dict to a file.

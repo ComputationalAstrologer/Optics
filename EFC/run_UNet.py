@@ -37,7 +37,9 @@ device = torch.device('cuda')
 # %%
 
 # Initialize the model and optimizer
-model = UN.UNet(in_channels=in_channels, out_channels=out_channels).to(device)
+#model = UN.UNet(in_channels=in_channels, out_channels=out_channels).to(device)
+model = UN.UNetWithSkip(in_channels=in_channels, out_channels=out_channels).to(device)
+
 optimizer = UN.optim.Adam(model.parameters(), lr=learning_rate)
 criterion = UN.nn.MSELoss()
 
@@ -45,7 +47,7 @@ criterion = UN.nn.MSELoss()
 
 # Train the model and save checkpoints
 UN.train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_dir, checkpoint_freq)
-
+# %%
 # Optionally, save the final model for inference
 UN.save_model_for_inference(model, './final_model.pth')
 
