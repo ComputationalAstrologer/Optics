@@ -53,123 +53,53 @@ class UNetWithSkip(nn.Module):
         )
 
     def forward(self, x):
-        debug = True
-        if debug:
+        debug0 = False
+        debug1 = True
+        if debug0:
             print(f"Input shape: {x.shape}")
 
         # Encoder
         enc1 = self.enc1(x)
-        if debug:
+        if debug0:
             print(f"After enc1: {enc1.shape}")
         enc2 = self.enc2(F.max_pool2d(enc1, 2))
-        if debug:
+        if debug0:
             print(f"After enc2: {enc2.shape}")
         enc3 = self.enc3(F.max_pool2d(enc2, 2))
-        if debug:
+        if debug0:
             print(f"After enc3: {enc3.shape}")
         enc4 = self.enc4(F.max_pool2d(enc3, 2))
-        if debug:
+        if debug1:
             print(f"After enc4: {enc4.shape}")
 
         # Bottleneck
         bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
-        if debug:
+        if debug1:
             print(f"After bottleneck: {bottleneck.shape}")
 
         # Decoder with skip connections
         dec3 = self.dec3(F.interpolate(bottleneck, size=enc4.shape[2:], mode='bilinear', align_corners=False))
         dec3 = torch.cat([dec3, enc4], dim=1)  # Concatenate skip connection from enc4
-        if debug:
+        if debug1:
             print(f"After dec3 (upscaled and concatenated with enc4): {dec3.shape}")
 
         dec2 = self.dec2(F.interpolate(dec3, size=enc3.shape[2:], mode='bilinear', align_corners=False))
         dec2 = torch.cat([dec2, enc3], dim=1)  # Concatenate skip connection from enc3
-        if debug:
+        if debug1:
             print(f"After dec2 (upscaled and concatenated with enc3): {dec2.shape}")
 
         dec1 = self.dec1(F.interpolate(dec2, size=enc2.shape[2:], mode='bilinear', align_corners=False))
         dec1 = torch.cat([dec1, enc2], dim=1)  # Concatenate skip connection from enc2
-        if debug:
+        if debug1:
             print(f"After dec1 (upscaled and concatenated with enc2): {dec1.shape}")
 
         # Output
         out = self.out_conv(dec1)
-        if debug:
+        if debug0:
             print(f"Output shape: {out.shape}")
 
         return out
 
-class UNetNoSkip(nn.Module):
-    def __init__(self, in_channels, out_channels):
-       super().__init__()
-
-       # Encoder with modified channels and larger kernels
-       self.enc1 = self.conv_block(in_channels, 16, kernel_size=5)
-       self.enc2 = self.conv_block(16, 32, kernel_size=5)
-       self.enc3 = self.conv_block(32, 64, kernel_size=3)
-       self.enc4 = self.conv_block(64, 128, kernel_size=3)
-
-       # Bottleneck
-       self.bottleneck = self.conv_block(128, 64, kernel_size=3)
-
-       # Decoder with reduced channels (no skip connections)
-       self.dec3 = self.conv_block(64, 64, kernel_size=3)  # Pas de concaténation
-       self.dec2 = self.conv_block(64, 32, kernel_size=3)
-       self.dec1 = self.conv_block(32, 16, kernel_size=3)
-
-       # Output layer
-       self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
-
-    def conv_block(self, in_channels, out_channels, kernel_size=3):
-       """Basic convolution block with optional kernel size adjustment"""
-       return nn.Sequential(
-           nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
-           nn.ReLU(inplace=True),
-           nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
-           nn.ReLU(inplace=True)
-       )
-
-    def forward(self, x):
-       debug = False
-       if debug:
-           print(f"Input shape: {x.shape}")
-
-       # Encoder
-       enc1 = self.enc1(x)
-       if debug:
-           print(f"After enc1: {enc1.shape}")
-       enc2 = self.enc2(F.max_pool2d(enc1, 2))
-       if debug:
-           print(f"After enc2: {enc2.shape}")
-       enc3 = self.enc3(F.max_pool2d(enc2, 2))
-       if debug:
-           print(f"After enc3: {enc3.shape}")
-       enc4 = self.enc4(F.max_pool2d(enc3, 2))
-       if debug:
-           print(f"After enc4: {enc4.shape}")
-
-       # Bottleneck
-       bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
-       if debug:
-           print(f"After bottleneck: {bottleneck.shape}")
-
-       # Decoder (sans skip connections)
-       dec3 = self.dec3(F.interpolate(bottleneck, size=(7,7), mode='bilinear', align_corners=False))
-       if debug:
-           print(f"After dec3 (upscaled): {dec3.shape}")
-       dec2 = self.dec2(F.interpolate(dec3, size=(15,15), mode='bilinear', align_corners=False))
-       if debug:
-           print(f"After dec2 (upscaled): {dec2.shape}")
-       dec1 = self.dec1(F.interpolate(dec2, size=(31,31), mode='bilinear', align_corners=False))
-       if debug:
-           print(f"After dec1 (upscaled): {dec1.shape}")
-
-       # Output
-       out = self.out_conv(dec1)
-       if debug:
-           print(f"Output shape: {out.shape}")
-
-       return out
 
 class ComplexImageDataSet(torch.utils.data.Dataset):
     def __init__(self, input_images, target_images, transform=None):
@@ -322,3 +252,76 @@ def visualize_results(model, input_image, target_image):
     axs[2].set_title('Predicted Image (Real part)')
 
     plt.show()
+
+
+class UNetNoSkip(nn.Module):
+    def __init__(self, in_channels, out_channels):
+       super().__init__()
+
+       # Encoder with modified channels and larger kernels
+       self.enc1 = self.conv_block(in_channels, 16, kernel_size=5)
+       self.enc2 = self.conv_block(16, 32, kernel_size=5)
+       self.enc3 = self.conv_block(32, 64, kernel_size=3)
+       self.enc4 = self.conv_block(64, 128, kernel_size=3)
+
+       # Bottleneck
+       self.bottleneck = self.conv_block(128, 64, kernel_size=3)
+
+       # Decoder with reduced channels (no skip connections)
+       self.dec3 = self.conv_block(64, 64, kernel_size=3)  # Pas de concaténation
+       self.dec2 = self.conv_block(64, 32, kernel_size=3)
+       self.dec1 = self.conv_block(32, 16, kernel_size=3)
+
+       # Output layer
+       self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
+
+    def conv_block(self, in_channels, out_channels, kernel_size=3):
+       """Basic convolution block with optional kernel size adjustment"""
+       return nn.Sequential(
+           nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+           nn.ReLU(inplace=True),
+           nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=kernel_size//2),
+           nn.ReLU(inplace=True)
+       )
+
+    def forward(self, x):
+       debug = False
+       if debug:
+           print(f"Input shape: {x.shape}")
+
+       # Encoder
+       enc1 = self.enc1(x)
+       if debug:
+           print(f"After enc1: {enc1.shape}")
+       enc2 = self.enc2(F.max_pool2d(enc1, 2))
+       if debug:
+           print(f"After enc2: {enc2.shape}")
+       enc3 = self.enc3(F.max_pool2d(enc2, 2))
+       if debug:
+           print(f"After enc3: {enc3.shape}")
+       enc4 = self.enc4(F.max_pool2d(enc3, 2))
+       if debug:
+           print(f"After enc4: {enc4.shape}")
+
+       # Bottleneck
+       bottleneck = self.bottleneck(F.max_pool2d(enc4, 2))
+       if debug:
+           print(f"After bottleneck: {bottleneck.shape}")
+
+       # Decoder (sans skip connections)
+       dec3 = self.dec3(F.interpolate(bottleneck, size=(7,7), mode='bilinear', align_corners=False))
+       if debug:
+           print(f"After dec3 (upscaled): {dec3.shape}")
+       dec2 = self.dec2(F.interpolate(dec3, size=(15,15), mode='bilinear', align_corners=False))
+       if debug:
+           print(f"After dec2 (upscaled): {dec2.shape}")
+       dec1 = self.dec1(F.interpolate(dec2, size=(31,31), mode='bilinear', align_corners=False))
+       if debug:
+           print(f"After dec1 (upscaled): {dec1.shape}")
+
+       # Output
+       out = self.out_conv(dec1)
+       if debug:
+           print(f"Output shape: {out.shape}")
+
+       return out
