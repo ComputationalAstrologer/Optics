@@ -36,7 +36,7 @@ class UNetWithSkip(nn.Module):
         self.bottleneck = self.conv_block(128, 64, kernel_size=3)
 
         # Decoder with skip connections
-        self.dec3 = self.conv_block(128, 64, kernel_size=3)  # Skip connection added
+        self.dec3 = self.conv_block(64, 64, kernel_size=3)  # Skip connection added
         self.dec2 = self.conv_block(64 + 32, 32, kernel_size=3)  # Skip connection added
         self.dec1 = self.conv_block(32 + 16, 16, kernel_size=3)  # Skip connection added
 

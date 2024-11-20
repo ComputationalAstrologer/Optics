@@ -6,6 +6,20 @@ Created on Wed Nov 13 17:04:49 2024
 @author: Richard Frazin rfrazin@umich.edu
 """
 
+
+machine = "OfficeWindows"
+if machine == "OfficeWindows":
+  import os
+  os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+"""
+This treats an error I'm encountering on my windows machine.  Specifically,
+the call to GFP(), see below, leads to an Python kernel crash.  Below is from UMGPT:
+The error you're encountering is related to the OpenMP runtime known as libiomp5md.dll.
+This happens when multiple copies of OpenMP are initialized in the same process, which 
+can cause conflicts. This issue is common when using libraries that internally use
+OpenMP, such as PyTorch and potentially other libraries you're importing.    
+"""
+
 import torch
 from SampleGen import GenerateFieldPairs as GFP
 import UNet4CrossField as UN
