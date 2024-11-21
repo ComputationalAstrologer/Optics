@@ -37,11 +37,11 @@ class UNetWithSkip(nn.Module):
 
         # Decoder with skip connections
         self.dec3 = self.conv_block(64, 64, kernel_size=3)  # Skip connection added
-        self.dec2 = self.conv_block(64 + 32, 32, kernel_size=3)  # Skip connection added
-        self.dec1 = self.conv_block(32 + 16, 16, kernel_size=3)  # Skip connection added
+        self.dec2 = self.conv_block(192, 32, kernel_size=3)  # Skip connection added
+        self.dec1 = self.conv_block(96, 16, kernel_size=3)  # Skip connection added
 
         # Output layer
-        self.out_conv = nn.Conv2d(16, out_channels, kernel_size=1)
+        self.out_conv = nn.Conv2d(48, out_channels, kernel_size=1)
 
     def conv_block(self, in_channels, out_channels, kernel_size=3):
         """Basic convolution block with optional kernel size adjustment"""
@@ -54,7 +54,7 @@ class UNetWithSkip(nn.Module):
 
     def forward(self, x):
         debug0 = False
-        debug1 = True
+        debug1 = False
         if debug0:
             print(f"Input shape: {x.shape}")
 
@@ -87,15 +87,27 @@ class UNetWithSkip(nn.Module):
         dec2 = torch.cat([dec2, enc3], dim=1)  # Concatenate skip connection from enc3
         if debug1:
             print(f"After dec2 (upscaled and concatenated with enc3): {dec2.shape}")
+        dec2_upscaled = F.interpolate(dec2, size=(31, 31), mode='bilinear', align_corners=False)
+        if debug1:
+            print(f"After upsampling dec2 to (31, 31): {dec2_upscaled.shape}")
+        # Upsample enc2 to (31, 31) to match the size of dec1
+        enc2_upscaled = F.interpolate(enc2, size=(31, 31), mode='bilinear', align_corners=False)
+        if debug1:
+            print(f"After upsampling enc2 to (31, 31): {enc2_upscaled.shape}")
 
-        dec1 = self.dec1(F.interpolate(dec2, size=enc2.shape[2:], mode='bilinear', align_corners=False))
-        dec1 = torch.cat([dec1, enc2], dim=1)  # Concatenate skip connection from enc2
+        dec1 = self.dec1(dec2_upscaled)
+        dec1 = torch.cat([dec1, enc2_upscaled], dim=1)  # Concatenate skip connection from enc2 (upsampled)
         if debug1:
             print(f"After dec1 (upscaled and concatenated with enc2): {dec1.shape}")
 
+        #dec1 = self.dec1(F.interpolate(dec2, size=enc2.shape[2:], mode='bilinear', align_corners=False))
+        #dec1 = torch.cat([dec1, enc2], dim=1)  # Concatenate skip connection from enc2
+        #if debug1:
+        #    print(f"After dec1 (upscaled and concatenated with enc2): {dec1.shape}")
+
         # Output
         out = self.out_conv(dec1)
-        if debug0:
+        if debug1:
             print(f"Output shape: {out.shape}")
 
         return out
@@ -229,19 +241,19 @@ def train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_di
             save_checkpoint(model, optimizer, epoch + 1, avg_loss, checkpoint_filepath)
 
 # 6. Visualization Function
+# input_image and target_image are numpy arrays of shape (2, m , m)
 def visualize_results(model, input_image, target_image):
+    shape = input_image.shape;  ss1 = shape[0]; ss2=shape[1]; ss3=shape[2]
     model.eval()
     with torch.no_grad():
-        output = model(input_image)
+        output = model(torch.tensor(input_image.reshape((1,ss1,ss2,ss3)), dtype=torch.float32).to(device))
 
-    input_img = input_image[0].cpu().numpy()
-    target_img = target_image[0].cpu().numpy()
     output_img = output[0].cpu().numpy()
 
     # Plot real and imaginary parts for input, target, and output images
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
-    # Plot input (real and imaginary parts)
+    # Plot input (real  parts)
     axs[0].imshow(input_img[0], cmap='gray')
     axs[0].set_title('Input Image (Real part)')
 
@@ -252,6 +264,25 @@ def visualize_results(model, input_image, target_image):
     axs[2].set_title('Predicted Image (Real part)')
 
     plt.show()
+
+def conv2d_output_size(input_size, kernel_size, stride=1, padding=0):
+    """
+    Calculer la taille de la sortie d'une couche de convolution 2D (torch.nn.Conv2d).
+
+    Args:
+        input_size (int): La taille de l'entrée (hauteur ou largeur).
+        kernel_size (int): La taille du noyau de convolution (int).
+        stride (int, optional): Le stride de la convolution (par défaut 1).
+        padding (int, optional): Le padding ajouté autour de l'image (par défaut 0).
+
+    Returns:
+        int: La taille de la sortie après la convolution.
+    """
+
+    # Appliquer la formule de calcul de la taille de sortie
+    output_size = 1 + (input_size - kernel_size + 2 * padding) // stride
+    return output_size
+
 
 
 class UNetNoSkip(nn.Module):
