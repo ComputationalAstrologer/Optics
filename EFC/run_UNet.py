@@ -64,7 +64,7 @@ UN.train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_dir
 UN.save_model_for_inference(model, './final_model.pth')
 
 # After training, visualize results for the first image in the dataset
-input_image = torch.tensor(input_images[0:1]).to(device)  # Get the first image
-target_image = torch.tensor(target_images[0:1]).to(device)  # Get the first target
+#input_image = torch.tensor(input_images[0:1]).to(device)  # Get the first image
+#target_image = torch.tensor(target_images[0:1]).to(device)  # Get the first target
 
 UN.visualize_results(model, input_image, target_image)
