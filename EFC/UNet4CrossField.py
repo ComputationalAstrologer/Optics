@@ -201,6 +201,7 @@ def save_model_for_inference(model, filepath):
     """
     torch.save(model.state_dict(), filepath)
     print(f"Model saved for inference to {filepath}")
+    return None
 
 def load_model_for_inference(model, filepath):
     """
@@ -209,6 +210,7 @@ def load_model_for_inference(model, filepath):
     model.load_state_dict(torch.load(filepath))
     model.eval()
     print(f"Model loaded for inference from {filepath}")
+    return None
 
 # 5. Training and Checkpoint Saving Logic
 def train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_dir, checkpoint_freq):
@@ -239,31 +241,58 @@ def train_model(model, train_loader, optimizer, criterion, epochs, checkpoint_di
         if (epoch + 1) % checkpoint_freq == 0:
             checkpoint_filepath = f"{checkpoint_dir}/checkpoint_epoch_{epoch+1}.pth"
             save_checkpoint(model, optimizer, epoch + 1, avg_loss, checkpoint_filepath)
+    return None
 
 # 6. Visualization Function
 # input_image and target_image are numpy arrays of shape (2, m , m)
 def visualize_results(model, input_image, target_image):
+
+
+# %%
     shape = input_image.shape;  ss1 = shape[0]; ss2=shape[1]; ss3=shape[2]
     model.eval()
     with torch.no_grad():
         output = model(torch.tensor(input_image.reshape((1,ss1,ss2,ss3)), dtype=torch.float32).to(device))
 
-    output_img = output[0].cpu().numpy()
+    output_image = output[0].cpu().numpy()
 
     # Plot real and imaginary parts for input, target, and output images
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    fig, axs = plt.subplots(2, 3, figsize=(11, 7))
 
-    # Plot input (real  parts)
-    axs[0].imshow(input_img[0], cmap='gray')
-    axs[0].set_title('Input Image (Real part)')
+    input_re = axs[0,0].imshow(input_image[0], cmap='seismic');
+    axs[0,0].set_title('Input Image (Real part)')
 
-    axs[1].imshow(target_img[0], cmap='gray')
-    axs[1].set_title('Target Image (Real part)')
+    target_re = axs[0,1].imshow(target_image[0], cmap='seismic')
+    axs[0,1].set_title('Target Image (Real part)')
 
-    axs[2].imshow(output_img[0], cmap='gray')
-    axs[2].set_title('Predicted Image (Real part)')
+    output_re = axs[0,2].imshow(output_image[0], cmap='seismic')
+    axs[0,2].set_title('Predicted Image (Real part)')
 
-    plt.show()
+    input_im = axs[1,0].imshow(input_image[1], cmap='seismic');
+    axs[1,0].set_title('Input Image (Imaginary part)')
+
+    target_im = axs[1,1].imshow(target_image[1], cmap='seismic')
+    axs[1,1].set_title('Target Image (Imaginary part)')
+
+    output_im = axs[1,2].imshow(output_image[1], cmap='seismic')
+    axs[1,2].set_title('Predicted Image (Imaginary part)')
+
+    # Barra de color para la primera fila: input_image tiene su propia escala
+    fig.colorbar(input_re, ax=axs[0, 0], orientation='vertical', fraction=0.02, pad=0.04)
+    # Barra de color compartida para target_image y output_image
+    fig.colorbar(target_re, ax=[axs[0, 1], axs[0, 2]], orientation='vertical', fraction=0.02, pad=0.04)
+    # Barra de color para la segunda fila: input_image (imaginario)
+    fig.colorbar(input_im, ax=axs[1, 0], orientation='vertical', fraction=0.02, pad=0.04)
+    # Barra de color compartida para target_image (imaginario) y output_image (imaginario)
+    fig.colorbar(target_im, ax=[axs[1, 1], axs[1, 2]], orientation='vertical', fraction=0.02, pad=0.04)
+    # Ajustar el diseño para evitar superposición
+    #plt.tight_layout()
+
+
+
+
+
+# %%
 
 def conv2d_output_size(input_size, kernel_size, stride=1, padding=0):
     """
@@ -282,6 +311,36 @@ def conv2d_output_size(input_size, kernel_size, stride=1, padding=0):
     # Appliquer la formule de calcul de la taille de sortie
     output_size = 1 + (input_size - kernel_size + 2 * padding) // stride
     return output_size
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
