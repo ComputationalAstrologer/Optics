@@ -10,11 +10,35 @@ In this simple model, the polarized detector fields are given by a spline coeffi
 
 """
 
+usePyTorch = True
+if not usePyTorch: torch = None
+
 import numpy as np
 from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
-import matplotlib.pyplot as plt
+try:
+    import torch
+except ImportError as e:
+    if not usePyTorch: print("No se pudo importar PyTorch. Asegúrate de tenerlo instalado.")
+    torch = None  # Definir torch como None para evitar errores posteriores
+# Verificar disponibilidad de CUDA
+if torch is not None and torch.cuda.is_available():
+    # Si PyTorch está disponible y CUDA está habilitado, usamos torch.tensor
+    device = 'cuda'
+    array =  lambda s: torch.tensor(s, dtype=torch.complex64, device=device)
+    isreal = lambda s: not s.is_complex()
+    exp = torch.exp
+    ii = torch.tensor(1j, dtype=torch.complex64)
+    real = torch.real; imag = torch.imag
+else:
+    ii = 1j
+    array = np.array  # Si no hay PyTorch o no hay CUDA, usamos np.array
+    print("Usando numpy array ya que no se pudo acceder a CUDA o PyTorch.")
+    real = np.real
+    imag = np.imag
+    isreal = np.isreal
+
 machine = "homeLinux"
 #machine = "officeWindows"
 if machine == "homeLinux":
@@ -36,6 +60,7 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     Syfn = 'ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ey.npy'  # 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ey.npy'
     SpecfieldXfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
     SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
+
 
 
 #This avoids the numpy Poisson random generator when the intensity is too big
@@ -232,7 +257,18 @@ class EFC():
                 self.Shy[k,:] = self.Sy[HolePixels[k],:]
                 self.sphx[k]  = self.spx[HolePixels[k]]
                 self.sphy[k]  = self.spy[HolePixels[k]]
-        else: pass
+
+        if torch is not None:  # convert the above quantities into torch.tensors
+           self.Sx = array(self.Sx)
+           self.Sy = array(self.Sy)
+           self.spx = array(self.spx)
+           self.spy = array(self.spy)
+           if HolePixels is not None:
+              self.Shx = array(self.Shx)
+              self.Shy = array(self.Shy)
+              self.sphx = array(self.sphx)
+              self.sphy = array(self.sphy)
+
         return(None)
 
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
@@ -257,47 +293,76 @@ class EFC():
         dI = 2*np.real(np.conj(f)*df.T).T
         return (I, dI)
     #See self.PolIntensity for notes
-    def Field(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, SpeckleFactor=None):
-        assert region == 'Hole' or region == 'Full'
-        assert DM_mode in ['height', 'phase']
-        nc = self.ndm**2
-        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
-        assert coef.shape == (nc,)
-        assert XorY == 'X' or XorY == 'Y'
-        if XorY == 'X':
-            if region == 'Hole':
-                Sys = self.Shx
-                sp = self.sphx
-            else:  # 'Full'
-                Sys = self.Sx
-                sp  = self.spx
-        else:  # 'Y'
-            if region == 'Hole':
-                Sys = self.Shy
-                sp  = self.sphy
-            else:  #'Full'
-                Sys = self.Sy
-                sp  = self.spy
-        if DM_mode == 'height':
-            assert np.iscomplexobj(coef) == False
-            c = np.exp(1j*4.*np.pi*coef/self.lamb)
+
+    def Field(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, SpeckleFactor=None, outputType='torch'):
+       if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
+       if XorY       not in ['X', 'Y']:          raise ValueError("Invalid value of 'XorY'.  Self explanatory.")
+       if region     not in ['Hole', 'Full']:    raise ValueError("Invalid value for 'region'. Expected 'Hole' or 'Full'.")
+       if DM_mode    not in ['height', 'phase']: raise ValueError("Invalid value for 'DM_mode'. Expected 'height' or 'phase'.")
+       if outputType not in ['numpy', 'torch']:  raise ValueError("Invalid value for 'outputType'. Expected 'numpy' or 'torch'.")
+       if outputType == 'torch' and torch is None: raise ValueError("PyTorch on the GPU must be enabled to use the 'torch' option.")
+       nc = self.ndm**2
+       coef = array(coef)  # the version of coef received by this function can be in numpy or torch format
+       if torch is None:  # whether DM_mode is 'phase' or 'height', coef must be real.
+             assert np.isreal(coef)
+       else:
+             assert torch.all(torch.imag(coef) == 0)
+       if isinstance(coef, np.ndarray):
+          if coef.shape != (nc,):  raise ValueError(f"Coeficientes deben tener la forma ({nc},). Forma actual: {coef.shape}.")
+       elif isinstance(coef, torch.Tensor):
+          if coef.shape != torch.Size([nc]):  raise ValueError(f"Coeficientes deben tener la forma ({nc},). Forma actual: {coef.shape}.")
+       else:  raise TypeError(f"Tipo de coef no soportado: {type(coef)}")
+
+       if XorY == 'X':
+           if region == 'Hole':
+               Sys = self.Shx
+               sp = self.sphx
+           else:  # 'Full'
+               Sys = self.Sx
+               sp  = self.spx
+       else:  # 'Y'
+           if region == 'Hole':
+               Sys = self.Shy
+               sp  = self.sphy
+           else:  #'Full'
+               Sys = self.Sy
+               sp  = self.spy
+
+       if DM_mode == 'height':
+          c = exp(ii * 4. * np.pi * coef / self.lamb)
+          if return_grad:
+               dc = ii * 4. * np.pi * c / self.lamb
+       elif DM_mode == 'phase':
+           c = exp(ii * coef)  # Replaced np.exp with exp and 1j with ii
+           if return_grad:
+               dc = ii * c
+       else:  # Not an option
+           assert False
+
+       f = Sys @ c
+       f += SpeckleFactor * sp
+
+       if return_grad:
+         df = Sys*dc  # This is the same as Sys @ diag(dc), assuming 'Speckles' don't depend on c
+       if outputType == 'torch':
+           if return_grad:
+               return (f.to(device=device), df.to(device=device)) if return_grad else f.to(device=device)
+           else:
+               return f.to(device=device)
+       elif outputType == 'numpy':
+          if torch is not None:
             if return_grad:
-                dc = 1j*4.*np.pi*c/self.lamb
-        elif DM_mode == 'phase':
-            assert np.iscomplexobj(coef) == False
-            c = np.exp(1j*coef)
-            if return_grad:
-                dc = 1j*c
-        else:  # not an option
-            assert False
-        f = Sys.dot(c)
-        f += SpeckleFactor*sp
-        if not return_grad:
-            return f
-        df = Sys*dc #  This is the same as Sys.dot(diag(dc)). speckles don't depend on c in this approximation.
-        return (f, df)
-    # see self.CostCrossFieldWithDomPenalty
-    def SetupCrossOpt(self, c0, OptPixels):
+               return (f.cpu().numpy(), df.cpu().numpy())
+            else:
+               return f.cpu().numpy()
+          else:  # torch is None
+             if return_grad:
+                return (f, df)
+             else: return f
+       else:
+           raise ValueError("outputType must be 'numpy' or 'torch'.")
+
+    def SetupCrossOpt(self, c0, OptPixels):  # see self.CostCrossFieldWithDomPenalty
         self.CrossOptimSetUp = True
         self.OptPixels = OptPixels
         crfield0 = self.Field(c0, XorY='Y',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=0.)
@@ -780,7 +845,6 @@ class EFC():
           cost_c.append(out['fun'])
 
         return {'dh_commands': command_dh, 'cross_commands': command_c, 'dh_cost': cost_dh, 'cross_cost': cost_c}
-
 #===============================================================================
 #                      EFC Class ends here
 #==============================================================================
