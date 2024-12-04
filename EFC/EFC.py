@@ -31,13 +31,15 @@ if torch is not None and torch.cuda.is_available():
     exp = torch.exp
     ii = torch.tensor(1j, dtype=torch.complex64)
     real = torch.real; imag = torch.imag
+    conj = torch.conj
 else:
+    device = None
     ii = 1j
-    array = np.array  # Si no hay PyTorch o no hay CUDA, usamos np.array
+    array = np.array
     print("Usando numpy array ya que no se pudo acceder a CUDA o PyTorch.")
-    real = np.real
-    imag = np.imag
+    real = np.real; imag = np.imag
     isreal = np.isreal
+    conj = np.conj
 
 machine = "homeLinux"
 #machine = "officeWindows"
@@ -272,6 +274,7 @@ class EFC():
         return(None)
 
     #This returns the x- or y- polarized intensity as a function of the spline coefficient vector
+    #This returns numpy arrays even when PyTorch acceleration is enabled.
     #The spline coefficient vector must have a shape (self.ndm**2,)
     #XorY - select the desired polarization 'X' or 'Y'
     #region - if 'Hole' only the intensity inside self.HoleBndy is computed.
@@ -281,19 +284,31 @@ class EFC():
     #return_grad - return the gradient.
     #SpeckleFactor - multiplier for additive speckle field.  Can be 0.  None corresponds to defaul (see __init__)
     def PolIntensity(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, SpeckleFactor=None):
-        if not return_grad:
+       if torch is not None:
+          otype = 'torch'
+       else:
+          otype = 'numpy'
+       if not return_grad:
             f =       self.Field(coef, XorY=XorY, region=region, DM_mode=DM_mode,
-                      return_grad=False, SpeckleFactor=SpeckleFactor)
-        else:
+                      return_grad=False, SpeckleFactor=SpeckleFactor, outputType=otype)
+       else:
             (f, df) = self.Field(coef, XorY=XorY, region=region, DM_mode=DM_mode,
-                      return_grad=True,  SpeckleFactor=SpeckleFactor)
-        I = np.real(f*np.conj(f))
-        if not return_grad:
-            return I
-        dI = 2*np.real(np.conj(f)*df.T).T
-        return (I, dI)
-    #See self.PolIntensity for notes
+                      return_grad=True,  SpeckleFactor=SpeckleFactor, outputType=otype)
+       I = real(f*conj(f))
+       if return_grad:
+           dI = 2*real(conj(f)*df.T).T
 
+       if torch is not None:
+           I = I.cpu().numpy
+           if return_grad:
+              dI = dI.cpu().numpy()
+
+       if not return_grad:
+              return I
+       else:
+          return (I, dI)
+
+    #See self.PolIntensity for notes
     def Field(self, coef, XorY='X', region='Hole', DM_mode='phase', return_grad=True, SpeckleFactor=None, outputType='torch'):
        if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
        if XorY       not in ['X', 'Y']:          raise ValueError("Invalid value of 'XorY'.  Self explanatory.")
