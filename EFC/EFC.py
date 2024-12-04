@@ -10,25 +10,36 @@ In this simple model, the polarized detector fields are given by a spline coeffi
 
 """
 
-usePyTorch = True
-if not usePyTorch: torch = None
+usePyTorch = True  # this provides GPU acceleration, not neural network stuff
 
 import numpy as np
 from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
 from scipy import optimize
-try:
-    import torch
-except ImportError as e:
-    if not usePyTorch: print("No se pudo importar PyTorch. Asegúrate de tenerlo instalado.")
-    torch = None  # Definir torch como None para evitar errores posteriores
-# Verificar disponibilidad de CUDA
-if torch is not None and torch.cuda.is_available():
-    # Si PyTorch está disponible y CUDA está habilitado, usamos torch.tensor
+
+if usePyTorch:
+   try:
+      import torch
+   except ImportError:
+      print("Unable to import PyTorch.  Using CPU mode.")
+      torch = None
+else:
+   print("CPU mode selected.")
+   torch = None
+if torch is not None:
+   if torch.cuda.is_available():
+      print("GPU acceleration via PyTorch enabled.")
+   else:
+      print("PyTorch imported, but cuda is not available.  Using CPU mode.")
+
+
+if torch is not None:  # Si PyTorch está disponible y CUDA está habilitado, usamos torch.tensor
     device = 'cuda'
     array =  lambda s: torch.tensor(s, dtype=torch.complex64, device=device)
     isreal = lambda s: not s.is_complex()
     exp = torch.exp
+    diag = torch.diag
+    outer = torch.outer
     ii = torch.tensor(1j, dtype=torch.complex64)
     real = torch.real; imag = torch.imag
     conj = torch.conj
@@ -36,7 +47,8 @@ else:
     device = None
     ii = 1j
     array = np.array
-    print("Usando numpy array ya que no se pudo acceder a CUDA o PyTorch.")
+    diag = np.diag
+    outer = np.outer
     real = np.real; imag = np.imag
     isreal = np.isreal
     conj = np.conj
@@ -299,7 +311,7 @@ class EFC():
            dI = 2*real(conj(f)*df.T).T
 
        if torch is not None:
-           I = I.cpu().numpy
+           I = I.cpu().numpy()
            if return_grad:
               dI = dI.cpu().numpy()
 
@@ -532,14 +544,17 @@ class EFC():
             print("You must run CostHoleDominant to set self.CostScale first.")
             assert False
         if SpeckleFactor is None: SpeckleFactor = self.SpeckleFactor
+        coef = array(coef)
         Sys = self.Shx  #  hole system matrix - see self.PolIntensity
-        f = Sys.dot(np.exp(1j*coef))
+        f = Sys@exp(ii*coef)
         f += SpeckleFactor*self.sphx  # hole speckle field
-        df = 1j*Sys*np.exp(1j*coef)  # same as Sys@np.diag(np.exp(1j*coef))
-        H = np.zeros((len(coef),len(coef)))
+        df = ii*Sys*exp(ii*coef)  # same as Sys@np.diag(np.exp(1j*coef))
+        H = array(np.zeros((len(coef),len(coef))))
         for m in range(Sys.shape[0]):  #loop over pixels
-            H += 2*np.real( np.outer(df[m,:], df[m,:].conj()) )
-            H += 2*np.real(np.diag( 1j*df[m,:]*f[m].conj() ))  # additional term for diagonal elements
+            H += 2*real( outer(df[m,:], conj(df[m,:]) ) )
+            H += 2*real(diag( ii*df[m,:]*conj(f[m])) )   # additional term for diagonal elements
+        if torch is not None:
+           H = H.cpu().numpy()
         return H*self.CostScale
 
     #This does the optimization over the dominant intensity to dig the dark hole
