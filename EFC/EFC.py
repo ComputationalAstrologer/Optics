@@ -9,12 +9,14 @@ In this simple model, the polarized detector fields are given by a spline coeffi
   times the propagation matrix corresponding to the desired polarization.
 
 """
+print("Initializing Module.")
 
 usePyTorch = True  # this provides GPU acceleration, not neural network stuff
 
 import numpy as np
 from os import path as ospath  #needed for isfile(), join(), etc.
 from sys import path as syspath
+import warnings
 from scipy import optimize
 
 if usePyTorch:
@@ -31,26 +33,27 @@ if torch is not None:
       print("GPU acceleration via PyTorch enabled.")
    else:
       print("PyTorch imported, but cuda is not available.  Using CPU mode.")
-
+      torch = None
 
 if torch is not None:  # Si PyTorch está disponible y CUDA está habilitado, usamos torch.tensor
     device = 'cuda'
-    array =  lambda s: torch.tensor(s, dtype=torch.complex64, device=device)
+    array =  lambda s: torch.tensor(s, dtype=torch.complex64, device='cuda')
     isreal = lambda s: not s.is_complex()
     exp = torch.exp
     diag = torch.diag
     outer = torch.outer
-    ii = torch.tensor(1j, dtype=torch.complex64)
+    ii = torch.tensor(1j, dtype=torch.complex64, device='cuda')
     real = torch.real; imag = torch.imag
     conj = torch.conj
 else:
     device = None
     ii = 1j
+    exp =  np.exp
     array = np.array
     diag = np.diag
     outer = np.outer
     real = np.real; imag = np.imag
-    isreal = np.isreal
+    isreal = lambda s:  all(np.isreal(s))
     conj = np.conj
 
 machine = "homeLinux"
@@ -329,16 +332,19 @@ class EFC():
        if outputType not in ['numpy', 'torch']:  raise ValueError("Invalid value for 'outputType'. Expected 'numpy' or 'torch'.")
        if outputType == 'torch' and torch is None: raise ValueError("PyTorch on the GPU must be enabled to use the 'torch' option.")
        nc = self.ndm**2
-       coef = array(coef)  # the version of coef received by this function can be in numpy or torch format
-       if torch is None:  # whether DM_mode is 'phase' or 'height', coef must be real.
-             assert np.isreal(coef)
+       if torch is None:
+          assert all(np.isreal(coef))
        else:
-             assert torch.all(torch.imag(coef) == 0)
+          coef = torch.tensor(coef, dtype=torch.float32).to(device='cuda')
        if isinstance(coef, np.ndarray):
           if coef.shape != (nc,):  raise ValueError(f"Coeficientes deben tener la forma ({nc},). Forma actual: {coef.shape}.")
        elif isinstance(coef, torch.Tensor):
           if coef.shape != torch.Size([nc]):  raise ValueError(f"Coeficientes deben tener la forma ({nc},). Forma actual: {coef.shape}.")
        else:  raise TypeError(f"Tipo de coef no soportado: {type(coef)}")
+
+       debug = False
+
+       if debug: print("update! coef device", coef.device)
 
        if XorY == 'X':
            if region == 'Hole':
@@ -355,9 +361,11 @@ class EFC():
                Sys = self.Sy
                sp  = self.spy
 
+       if debug: print("Sys device", Sys.device)
+
        if DM_mode == 'height':
-          c = exp(ii * 4. * np.pi * coef / self.lamb)
-          if return_grad:
+           c = exp(ii * 4. * np.pi * coef / self.lamb)
+           if return_grad:
                dc = ii * 4. * np.pi * c / self.lamb
        elif DM_mode == 'phase':
            c = exp(ii * coef)  # Replaced np.exp with exp and 1j with ii
@@ -366,6 +374,9 @@ class EFC():
        else:  # Not an option
            assert False
 
+       if debug: print("c device", c.device)
+       if debug: assert False
+
        f = Sys @ c
        f += SpeckleFactor * sp
 
@@ -373,9 +384,9 @@ class EFC():
          df = Sys*dc  # This is the same as Sys @ diag(dc), assuming 'Speckles' don't depend on c
        if outputType == 'torch':
            if return_grad:
-               return (f.to(device=device), df.to(device=device)) if return_grad else f.to(device=device)
+               return (f.to(device='cuda'), df.to(device='cuda')) if return_grad else f.to(device='cuda')
            else:
-               return f.to(device=device)
+               return f.to(device='cuda')
        elif outputType == 'numpy':
           if torch is not None:
             if return_grad:
@@ -523,7 +534,9 @@ class EFC():
     #scale - setting this to 10^6 seems to help the Newton-CG minimizer
     def CostHoleDominant(self, c, return_grad=True, scale=1.e6):
         self.CostScale = scale
-        assert np.iscomplexobj(c) is False
+        if np.iscomplexobj(c):
+            print("CostHoleDominant: Warning: Input parameter c should not be complex-valued.")
+            assert sum(np.imag(np.abs(c))) == 0.
         assert c.shape == (self.Sx.shape[1],)
         if return_grad:
             I, dI = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=True)
