@@ -137,9 +137,9 @@ Cdh = stuffB['DHcmd']  # dark hole command for dominant field
 # %%
 
 #First, let's trim the various vectors and matrices to the interior part of the image.
-goodpix = EFC.MakePixList([59,196,59,196] ,(256,256))  # the spline model has problems outside of this region  due to high frequency errors (my guess is that the Lyot stop does this)
-Sx = np.zeros((len(goodpix),len(Cdh))).astype('complex')
-Sy = np.zeros((len(goodpix),len(Cdh))).astype('complex')
+goodpix = EFC.MakePixList([45,210,45,210] ,(256,256))  # the spline model has problems outside of this region  due to high frequency errors (my guess is that the Lyot stop does this)
+Sx = np.zeros((len(goodpix),B.Sx.shape[1])).astype('complex')
+Sy = np.zeros((len(goodpix),B.Sx.shape[1])).astype('complex')
 spx = np.zeros((len(goodpix),)).astype('complex')
 spy = np.zeros((len(goodpix),)).astype('complex')
 count = -1
@@ -150,11 +150,6 @@ for k in range(B.Sx.shape[0]):  # loop over rows (each column is an image in vec
       Sy[count, :] = B.Sy[k,:]
       spx[count] = B.spx[k]*B.SpeckleFactor  # speckle field in dom polarization
       spy[count] = B.spy[k]*B.SpeckleFactor  # speckle field in cross polarization
-#In the paper simulations, the speckle field the dark hole command does not
-#  alter the speckle field.  This is OK for the purposes of showing the estimation
-#  works because the choice of speckle field is fairly arbitrary.
-Sx = Sx.dot(np.diag(np.exp(1j*Cdh)))  # apply the dark hole command to the system matrices
-Sy = Sy.dot(np.diag(np.exp(1j*Cdh)))
 
 
 # %%
@@ -176,8 +171,11 @@ abxy = (abx + aby)/2  # I don't have better idea.  See below.
 #spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
 #Sxy = np.vstack((Sx/normx, Sy/normy))  # stack the system matrices
 #abxy = np.linalg.pinv(Sxy)@(spxy)  # the pinv takes a minute
+
+#!!!!!!!!!
 rspx = Sx@(abxy)  # reconstructions of speckle fields
 rspy = Sy@(abxy)
+
 
 # %%
 plt.figure();plt.plot(np.imag(spx),'ko',np.imag(rspx),'rx');plt.title('imag part of dominant speckle field');
@@ -203,6 +201,14 @@ print('The ratio of the misfit error std to the std of the true value is', np.st
 #while this set of aberration coefficients does not provide a prefect match to the
 #  the speckle fields, it provides speckles that are similar to the real ones and thus
 #  should be adequate for testing the Jacobian.
+
+#In the paper simulations, the speckle field the dark hole command does not
+#  alter the speckle field.  This is OK for the purposes of showing the estimation
+#  works because the choice of speckle field is fairly arbitrary.
+Sx = Sx.dot(np.diag(np.exp(1j*Cdh)))  # apply the dark hole command to the system matrices
+Sy = Sy.dot(np.diag(np.exp(1j*Cdh)))
+
+
 
 Sx_ab = Sx.dot(np.diag(abxy + 1.))  # apply the aberration found above to the system matrices
 Sy_ab = Sy.dot(np.diag(abxy + 1.))
