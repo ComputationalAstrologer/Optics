@@ -11,7 +11,7 @@ In this simple model, the polarized detector fields are given by a spline coeffi
 """
 print("Initializing Module.")
 
-usePyTorch = True  # this provides GPU acceleration, not neural network stuff
+usePyTorch = False  # set to False for CPU mode.  True provides GPU acceleration, not neural network stuff
 
 import numpy as np
 from os import path as ospath  #needed for isfile(), join(), etc.
