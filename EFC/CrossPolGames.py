@@ -152,29 +152,67 @@ for k in range(B.Sx.shape[0]):  # loop over rows (each column is an image in vec
       spy[count] = B.spy[k]*B.SpeckleFactor  # speckle field in cross polarization
 
 
-# %%
-#Let's find a vector of spline coefficients that
-# comes close to reproducing the speckle field (spx and spy).   The basic equation is that the
-# speckle field, f, is given by f = S a, where a is the complex-valued
-# vector that plays the role of aberrations and S is the system matrix.  Note this model is equivalent
-# to f = S (a + one) - S one , where one is vector of ones, so a represents perturbations from unity.
-#Thus, the aberrated system matrix responsible for this specklefield is S.dot(np.diag(a + one))
+"""
+Let's find a vector of spline coefficients that
+ comes close to reproducing the speckle field (spx and spy).
 
-abx = np.linalg.pinv(Sx)@spx
-aby = np.linalg.pinv(Sy)@spy
-abxy = (abx + aby)/2  # I don't have better idea.  See below.
+There are two models for the speckle field, f, is given by:
+ model 1:
+   f = S (a + one) - S one --> f = S a, where one is vector of ones  where (a + one) is the complex-valued
+   vector that plays the role of a phase/amplitude screen that mimics aberrations.
+   The estimate of a is \hat{a} = pinv(S) f.   The aberrated system is then approximated
+   by S@np.diag(\hat{a} + one).  The reconstructed speckle field is given by S \hat{a}
+ model 2:
+   In n this model a is the complex-valued phase screen.
+   f = Sa - S one --> Sa = f + S one --> pinv(S)S a = pinv(S)f + pinv(S) S one.
+   Now, we take \hat{a} = pinv(S) S a , and we replace [pinv(S) S one] with one.  So,
+   \hat{a} = one + pinv(S) f  is the estimate of the phase screen.  The reconstructed speckle field is:
+   S (\hat{a} - one)
 
-#For reasons I don't understand, this scheme of weighting the two systems by their largest
-#  singular values leads to large values of abxy that are not useful.
-#normx, _ = eigsh(np.conj(Sx.T).dot(Sx), k=1, which='LM'); normx = np.sqrt(normx[0])  # largest SV
-#normy, _ = eigsh(np.conj(Sy.T).dot(Sy), k=1, which='LM'); normy = np.sqrt(normy[0])  # largest SV
-#spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
-#Sxy = np.vstack((Sx/normx, Sy/normy))  # stack the system matrices
-#abxy = np.linalg.pinv(Sxy)@(spxy)  # the pinv takes a minute
+The differences in the reconstructed speckle fields from the two models small, maybe zero.
+"""
 
-#!!!!!!!!!
-rspx = Sx@(abxy)  # reconstructions of speckle fields
-rspy = Sy@(abxy)
+Model1 = False
+Model2 = True
+if Model2: Model1 = False
+if Model1: Model2 = False
+
+if Model1:
+   abx = np.linalg.pinv(Sx)@spx
+   aby = np.linalg.pinv(Sy)@spy
+   abxy = (abx + aby)/2  # I don't have better idea.  See below.
+   rspx = Sx@abxy # could also use aby or abxy
+   rspy = Sy@abxy # could also use aby or abxy
+   #For reasons I don't understand, this scheme of weighting the two systems by their largest
+   #  singular values leads to large values of abxy that are not useful.
+   #normx, _ = eigsh(np.conj(Sx.T).dot(Sx), k=1, which='LM'); normx = np.sqrt(normx[0])  # largest SV
+   #normy, _ = eigsh(np.conj(Sy.T).dot(Sy), k=1, which='LM'); normy = np.sqrt(normy[0])  # largest SV
+   #spxy = np.hstack((spx/normx, spy/normy))  # make a long vector of the speckle fields
+   #Sxy = np.vstack((Sx/normx, Sy/normy))  # stack the system matrices
+   #abxy = np.linalg.pinv(Sxy)@(spxy)  # the pinv takes a minute
+
+
+if Model2:
+   abx = 1. + np.linalg.pinv(Sx)@spx
+   aby = 1. + np.linalg.pinv(Sy)@spy
+   abxy = (abx + aby)/2
+   rspx = Sx@(abxy - 1.)  # could also use aby or abxy
+   rspy = Sy@(abxy - 1.)  # could also use aby or abxy
+
+
+"""
+
+In Model2, the phase/amplitude screen is simply 'a'.  Writing a = (1 + s)e^(j phi), we
+   have |a| = 1 + s  and angle(a) = phi
+  with the default files and using a = abxy as estimated above we have:
+     np.mean(np.abs(abxy))   =  0.9960673612652552
+     np.std(np.abs(abxy))    = 0.015337923381848103
+     np.std(np.abs(abxy-1))  = 0.02913474127342675  - I don't think this reflects anything useful,  since the angle is involved
+     np.mean(np.angle(abxy)) = -0.0030195392447966035
+     np.std(np.angle(abxy))  = 0.04829658629656222
+     median(np.angle(abxy))  = -0.0034685649272299226
+"""
+
 
 
 # %%
