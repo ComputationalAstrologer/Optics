@@ -11,7 +11,7 @@ In this simple model, the polarized detector fields are given by a spline coeffi
 """
 print("Initializing Module.")
 
-usePyTorch = False  # set to False for CPU mode.  True provides GPU acceleration, not neural network stuff
+usePyTorch = True  # set to False for CPU mode.  True provides GPU acceleration, not neural network stuff
 
 import numpy as np
 from os import path as ospath  #needed for isfile(), join(), etc.
@@ -590,7 +590,7 @@ class EFC():
             ub =   maxabs*np.ones(c0.shape)
             lb = - maxabs*np.ones(c0.shape)
             constr = optimize.LinearConstraint(conmat, lb=lb, ub=ub)
-            out = optimize.minimize(self.CostHoleDominant, c0, args=(),options=options,
+            out = optimize.minimize(self.CostHoleDominant, c0, args=args,options=options,
                                     method='SLSQP',jac=True,constraints=(constr,))
             ffvalue = self.CostHoleDominant(out['x'], return_grad=False)
             print("Final Dark Hole Cost = ", ffvalue)
