@@ -75,8 +75,8 @@ if Reduced:  #stuff averaged over 2x2 pixels in the image plane
     fpsize //= 2
     Sxfn = 'ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ex.npy'  # 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ex.npy'
     Syfn = 'ThreeOAP20mmSquareApCgkn33x33_SystemMatrixReducedContrUnits_Ey.npy'  # 'SysMatReduced_LgOAPcg21x21_ContrUnits_Ey.npy'
-    SpecfieldXfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
-    SpecfieldYfn = 'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
+    SpecfieldXfn = 'SpeckleFieldX_121224.npy' #'SpeckleFieldReducedFrom33x33PhaseScreen_Ex.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ex.npy'
+    SpecfieldYfn = 'SpeckleFieldY_121224.npy' #'SpeckleFieldReducedFrom33x33PhaseScreen_Ey.npy'  # 'SpeckleFieldReducedFrom24x24screen_Ey.npy'
 
 
 
@@ -532,19 +532,19 @@ class EFC():
     #This is a cost function for a dark hole in the dominant polarization ('X')
     #c - DM command vector
     #scale - setting this to 10^6 seems to help the Newton-CG minimizer
-    def CostHoleDominant(self, c, return_grad=True, scale=1.e6):
+    def CostHoleDominant(self, c, return_grad=True, scale=1.e6,SpeckleFactor=None):
         self.CostScale = scale
         if np.iscomplexobj(c):
             print("CostHoleDominant: Warning: Input parameter c should not be complex-valued.")
             assert sum(np.imag(np.abs(c))) == 0.
         assert c.shape == (self.Sx.shape[1],)
         if return_grad:
-            I, dI = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=True)
+            I, dI = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=True,SpeckleFactor=SpeckleFactor)
             cost = np.sum(I)
             dcost = np.sum(dI, axis=0)
             return (scale*cost, scale*dcost)
         else:
-            I     = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=False)
+            I     = self.PolIntensity(c,XorY='X',region='Hole',DM_mode='phase',return_grad=False,SpeckleFactor=SpeckleFactor)
             cost = np.sum(I)
             return scale*cost
 
@@ -590,7 +590,7 @@ class EFC():
             ub =   maxabs*np.ones(c0.shape)
             lb = - maxabs*np.ones(c0.shape)
             constr = optimize.LinearConstraint(conmat, lb=lb, ub=ub)
-            out = optimize.minimize(self.CostHoleDominant, c0, args=args,options=options,
+            out = optimize.minimize(self.CostHoleDominant, c0,options=options,
                                     method='SLSQP',jac=True,constraints=(constr,))
             ffvalue = self.CostHoleDominant(out['x'], return_grad=False)
             print("Final Dark Hole Cost = ", ffvalue)
