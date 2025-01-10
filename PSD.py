@@ -20,10 +20,10 @@ Normal PSD fucntion (1D)
 Fmax - the largest spatial frequency - the frequency grid goes from
     0 to +Fmax  (Kmax = 2piFmax)
 h - the height of Gaussian
-c - center 
+c - center
 S - the width (std) of the Gaussian
 n - the number of sampling points
-""" 
+"""
 def MyGaussian1D(Fmax, h, c, sig, n):
     s = np.linspace(0, Fmax, n)
     f = np.zeros(s.shape)
@@ -35,7 +35,7 @@ def MyGaussian1D(Fmax, h, c, sig, n):
 This surface roughness function is from Jhen Lumbres' thesis.
 sigSR has units of nm
 The default values for Kmax and Kmin are:
-   Kmax = 1/(2.5 um) = 4.e-4 nm^-1 and 
+   Kmax = 1/(2.5 um) = 4.e-4 nm^-1 and
    Kmin = 1/(85 um) = 1.1765e-5 nm^-1, resp.
 The output units are nm^2m^2
 """
@@ -78,7 +78,7 @@ def sumVonKarmanPSD(k, amp, beta, inS, otS, alpha, sigSR, base=1.e-9):
     return(psd)
 """
 This integrates the 1D or 2D PSD to get the RMS as a function of the maximum spatial
-  frequency considered [Kmax - this has nothing to with Kmax in the function 
+  frequency considered [Kmax - this has nothing to with Kmax in the function
   VonKarmanPSD()].  Kmin sets the lower limit of the integration.
 
 In order to transform the integral to (natural) log space, where q = log(k),
@@ -91,8 +91,8 @@ In order to transform the integral to (natural) log space, where q = log(k),
     Let f2(k) be the 2D radial PSF where k^2 = kx^2 + ky^2 and let g2(q) be the 2D PSD in log space
     We can find g2(q) via the condition f2(k) k dk = g2(q) q dq -->
              g2(q) = f2(k) (k/q) |dk/dq| -> g2(q) = f2(exp(q)) (1/q) exp(2q)
-  
-  
+
+
 Note that in 1D: RMS^2(Kmax) = 2*int_Kmin^Kmax f1(k) dk  (Kmin, Kmax  > 0)
                            = 2*int_{log(Kmin)}^{log(Kmax)} f1(exp(q)) exp(q) dq,
     In 2D:  RMS^2(Kmax) = 2pi*int_Kmin^Kmax f2(k) k dk
@@ -149,16 +149,28 @@ n - the number of points in the segment
 
 """
 This is similar to SampleExpPSD1D, except that is it 2D.
-psd - the input psd - assumed to a radial function. 
+In 1D, if f(x) is real and g(k) is its FT, then:
+   Re(g(k)) = Re(g(-k)) [even] and Im(g(k)) = - Im(g(-k)) [odd].  When we apply this result to calculate f(x) from g(k),
+   we need only integrate over positive values of k to find:
+   f(x) = 2*\int_{0}^{\infty} dk [ g_r(k)*cos(kx) - g_i(k)*sin(kx) ], where the standard FT normalization factor has not been included
+The same holds
+   in 2D when x and k are 2D vectors, but the 2D integral is over the upper 1/2 plane, but to show the integral result,
+   you need to apply the above even/odd conditions by integrating over opposite quadrants.
+
+psd - the input psd - assumed to a radial function, meaning that it depends on |k| only.
      -  units assumed to be nm^2 m^2
-R - the radius of the surface (units meters)
+R - the radius of the surface (units meters), See below for 'square' option
 gridspace - spacing of grid points on surface (units meters)
 Kmin - minimum spatial frequency (units 1/m)
 Kmax - maximum spatial frequency (units 1/m)
      - make sure this is resolved in terms of the gridspace parameter
 dK - spatial fequency imcrement
+CircOrSqu - must be 'circle' or 'square' for the output shape.  If 'square',
+   the square is 2R-by-2R.
 """
-def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, useCUPY=False):
+def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, CircOrSqu='square', useCUPY=False):
+    if CircOrSqu not in ['circle','square']:
+       raise ValueError("CircOrSqu must be 'circle' or 'square'.")
     if useCUPY:
         pp = cp
     else:
@@ -167,17 +179,18 @@ def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, useCUPY=False):
     qq = pp.linspace(-R, R, int(2*R/gridspace))
     qq = pp.meshgrid(qq, qq)
     x = qq[0]; y = qq[1];  # x and y are 2D arrays of the spatial coords
-    circle = pp.ones(x.shape)
-    nk = x.shape[0]
-    for l in range(nk):
-        for m in range(nk):
-            if x[m,l]**2 + y[m,l]**2 > R*R:
-                circle[m,l] = 0.
+    if CircOrSqu == 'circle':
+       circle = pp.ones(x.shape)
+       nk = x.shape[0]
+       for l in range(nk):
+          for m in range(nk):
+             if x[m,l]**2 + y[m,l]**2 >= R*R:
+                   circle[m,l] = 0.
     surf = pp.zeros(x.shape)  # random error surface
     #create spatial frequency grid
     qq = pp.linspace(-Kmax, Kmax, int(2*Kmax/dK))
     qq = pp.meshgrid(qq,qq)
-    u = qq[0]; v = qq[1]  # u and v are 2D array of the spatial frequencies
+    u = qq[0]; v = qq[1]  # u and v are 2D arrays of the spatial frequencies
     del(qq)
     nk = u.shape[0]  # length of spatial frequency grid
     tp = 2*pp.pi
@@ -189,11 +202,11 @@ def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, useCUPY=False):
             cf = pp.cos(tp*u[m,l]*x + tp*v[m,l]*y)
             sf = pp.sin(tp*u[m,l]*x + tp*v[m,l]*y)
             pwr = pp.random.exponential(psd(ak))*dK*dK
-            camp = pp.sqrt(pwr)*pp.exp(1j*2*pp.pi*pp.random.rand())  # complex amplitude 
+            camp = pp.sqrt(pwr)*pp.exp(1j*2*pp.pi*pp.random.rand())  # complex amplitude
             ramp = pp.real(camp)
             iamp = pp.imag(camp)
             surf += 2*(ramp*cf + iamp*sf)
-    surf *= circle
+    if CircOrSqu == 'circle':  surf *= circle
     if useCUPY:
         surf = cp.asnumpy(surf)
     return(surf)
@@ -230,5 +243,9 @@ params = {'OAP5':
     }
 }
 
-
-
+#make psd for 50 mm flat
+d = params['flat']
+psd_flat = lambda k: sumVonKarmanPSD(k, d['amp'], d['beta'], d['inS'], d['otS'], d['alpha'], d['sigSR'], base=1.e-9)
+#make psd for OAP5
+d = params['OAP5']
+psd_oap = lambda k: sumVonKarmanPSD(k, d['amp'], d['beta'], d['inS'], d['otS'], d['alpha'], d['sigSR'], base=1.e-9)
