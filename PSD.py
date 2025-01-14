@@ -12,6 +12,7 @@ transforms Hermitian.
 """
 
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.integrate import quad
 import cupy as cp
 
@@ -88,7 +89,8 @@ In order to transform the integral to (natural) log space, where q = log(k),
     and let g1(q) be the 1D PSD in log space.  Then, the required change of
     variables is given by the condition    f1(k) dk = g1(q) dq -> g1(q) = f1(k)|dk/dq|
   For a 2D radial PSF:
-    Let f2(k) be the 2D radial PSF where k^2 = kx^2 + ky^2 and let g2(q) be the 2D PSD in log space
+    Let f2(k) be the 2D radial PSF where k^2 = kx^2 + ky^2 and let q = log(k),
+      so g2(q) is the 2D PSD in log space
     We can find g2(q) via the condition f2(k) k dk = g2(q) q dq -->
              g2(q) = f2(k) (k/q) |dk/dq| -> g2(q) = f2(exp(q)) (1/q) exp(2q)
 
@@ -113,7 +115,7 @@ def integrateLog(fcn, npts=100, maxKmax=2.e4, Kmin=4., ndim=2):
     if ndim == 1:
         f = lambda t:       2*np.exp(  t)*fcn(np.exp(t))
     else:
-        f = lambda t: 2*np.pi*np.exp(2*t)*(fcn(np.exp(t)))
+        f = lambda t: 2*np.pi*np.exp(2*t)*fcn(np.exp(t))
     RMSsq = np.zeros((npts,))
     natLog2Log10 = np.log10(np.e)  # factor to convert natural logs to 10-based logs
     for nn in (1 + np.arange(npts-1)):
@@ -205,7 +207,7 @@ def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, CircOrSqu='square', useCUP
             camp = pp.sqrt(pwr)*pp.exp(1j*2*pp.pi*pp.random.rand())  # complex amplitude
             ramp = pp.real(camp)
             iamp = pp.imag(camp)
-            surf += 2*(ramp*cf + iamp*sf)
+            surf += 2*(ramp*cf -iamp*sf)
     if CircOrSqu == 'circle':  surf *= circle
     if useCUPY:
         surf = cp.asnumpy(surf)
@@ -214,8 +216,16 @@ def SampleExpPSD2D(psd, R, gridspace, Kmin, Kmax, dK, CircOrSqu='square', useCUP
 
 """
 This loads Jhen's PSD parameters
-"""
+
+Note that a precision polished metal mirror from Edmund has an RMS of about 4nm,
+  which is consistent with the result from the integrateLog function above when
+  using the 'flat' settings below.  Similarly, Edmust offers protected gold OAPs (various offset angle options)
+  that have <5 nm and <10 nm RMS surface roughness.  The latter number is consistent
+  with the result from integrateLog with 'OAP5' setting.
+
+
 #OAP PSDs - output units are nm^2m^2
+"""
 params = {'OAP5':
   {'amp': [1., 1., 1.],
    'alpha': [3.029, -3.103, 0.668],
@@ -223,7 +233,9 @@ params = {'OAP5':
     'otS': [0.019, 16., 0.024],  # units are m
     'inS': [-3.e-6, 4.29e-3, 1.32e-4],  # units are m
    'sigSR': [5.e-6, 5.e-6, 5.5e-1],  # units are nm
-   'base': 1.e-9  # units nm^2m^2
+   'base': 1.e-9,  # units nm^2m^2
+   'Kstart': 1. , # units 1/m  lowest spatial fequency
+   'Kend':  1.e5  # units 1/m highest spatial frequency
   },'flat' :  # 50 mm flats, used for fold mirrors
    {'amp': [1., 1., 1.],
     'alpha': [3.284, 1.947, 2.827],
@@ -231,7 +243,9 @@ params = {'OAP5':
     'otS': [-0.017,-15., -5.7e-4],  # units are m
     'inS': [0.0225, 0.00335, 2.08e-4],  # units are m
     'sigSR': [5.e-5, 5.e-5, 0.08],  # units are nm
-    'base': 1.e-10  # units nm^2m^2
+    'base': 1.e-10,  # units nm^2m^2
+   'Kstart': 1. , # units 1/m  lowest spatial fequency
+   'Kend':  1.e5  # units 1/m highest spatial frequency
     },'M3' :  # big telescope tertiary mirror
    {'amp': [1., 1., 0.],
     'alpha': [-27.924, 3.615, 0.],
@@ -239,13 +253,48 @@ params = {'OAP5':
     'otS': [0.42, 0.12, np.inf],  # units are m
     'inS': [-1.31, 8.81e-5, 0.],  # units are m
     'sigSR': [0.05, 0.37, 0.],  # units are nm
-    'base': 2.3e-5  # units nm^2m^2
+    'base': 2.3e-5,  # units nm^2m^2
+    'Kstart': 1. , # units 1/m  lowest spatial fequency
+    'Kend':  1.e5  # units 1/m highest spatial frequency
     }
 }
 
-#make psd for 50 mm flat
-d = params['flat']
-psd_flat = lambda k: sumVonKarmanPSD(k, d['amp'], d['beta'], d['inS'], d['otS'], d['alpha'], d['sigSR'], base=1.e-9)
+#make psds
+psd_oap = lambda k,  d = params['OAP5'] : sumVonKarmanPSD(k, d['amp'], d['beta'], d['inS'], d['otS'], d['alpha'], d['sigSR'], base=1.e-9)
+psd_flat = lambda k, d = params['flat'] : sumVonKarmanPSD(k, d['amp'], d['beta'], d['inS'], d['otS'], d['alpha'], d['sigSR'], base=1.e-9)
 #make psd for OAP5
-d = params['OAP5']
-psd_oap = lambda k: sumVonKarmanPSD(k, d['amp'], d['beta'], d['inS'], d['otS'], d['alpha'], d['sigSR'], base=1.e-9)
+
+#%%
+if True:  # make psd plots
+
+  var_oap , kaxis = integrateLog(psd_oap , npts=200, maxKmax=2.e4, Kmin=4., ndim=2)
+  var_flat, kaxis = integrateLog(psd_flat, npts=200, maxKmax=2.e4, Kmin=4., ndim=2)
+
+
+
+  Kstart = params['flat']['Kstart']; Kend = params['flat']['Kend']
+  kgrid = np.logspace(np.log10(Kstart), np.log10(Kend), 233)
+  pflat = 0.*kgrid
+  poap =  0.*kgrid
+  for m in range(len(kgrid)):
+     pflat[m] = psd_flat(kgrid[m])
+     poap[m]  = psd_oap(kgrid[m])
+
+  #  plt.rcParams['text.usetex']  this isn't working for me
+
+  plt.figure();
+  plt.plot(np.log10(kgrid/2/np.pi), np.log10(pflat),'k-',linewidth=3, label='flat mirror');
+  plt.plot(np.log10(kgrid/2/np.pi), np.log10(poap),'r:' ,linewidth=2, label='OAP');
+  plt.legend(fontsize=12)
+  plt.title('Fits to PSD Measurements')
+  plt.xlabel('log10[  spatial frequency) (1/m)  ]',fontsize=12)
+  plt.ylabel('log10[  PSD (nm^2/m^2)  ]',fontsize=12)
+
+  plt.figure();
+  plt.plot(kaxis,var_flat,'k-',label='flat mirror', linewidth=2);
+  plt.plot(kaxis,var_oap ,'r:',label='OAP',linewidth=2);
+  plt.title('Variance vs. max Spatial frequency')
+  plt.ylabel('Variance [nm^2]',fontsize=12)
+  plt.xlabel('log10[ spatial frequency (1/m) ]',fontsize=12)
+  plt.legend(fontsize=12)
+#%%
